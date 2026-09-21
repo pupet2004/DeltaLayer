@@ -1,975 +1,332 @@
-# DeltaLayer v0 正式设计规范
+# DeltaLayer v0.2 Conversation Delta 设计规范
 
 ## 1. 定位
 
 DeltaLayer 是一个面向长期 LLM / Agent 工作的轻量项目连续层。
 
-它不试图保存完整对话，也不试图构建复杂的长期记忆系统。
+它不保存完整对话，也不构建复杂的长期记忆系统。它保存的是：
 
-它只保存一类信息：
+> **项目在一次真实 Agent conversation 中产生的净持久语义变化。**
 
-> **项目发生了什么变化。**
+核心思想仍然是：
 
-其核心思想是：
+> **Persist change, not context. Let the next model reconstruct the rest.**
 
-> **Persist change, not context.
-> Let the next model reconstruct the rest.**
+### 版本边界
 
-中文：
+此前的 v0 dogfood 使用一个共享的 append-only `.deltalayer/changes.jsonl`，每个 durable event 追加一行。
 
-> **保存变化，而不是保存上下文；剩下的，让下一任模型自己重建。**
+v0.2 将 append-only 的边界提升到 conversation level：
 
----
+> **A conversation owns one Delta file. The file may change during that conversation and freezes at handoff.**
 
-# 2. 要解决的问题
+旧的 `changes.jsonl` 仍然是 legacy history，只读兼容，不迁移、不重写。Workbench Case 1 和 Qicetai Case 2 记录的是此前 shared-JSONL 模型的真实使用，不能伪装成当时已经使用 Conversation Delta 文件。
 
-长期 Agent 项目通常存在以下问题：
-
-* 新 Session 不知道之前发生过什么；
-* 新 Agent 需要重新扫描大量源码；
-* 用户需要重新解释项目背景；
-* 完整聊天历史 token 成本高；
-* 长上下文包含大量已经废弃的方案和过程噪声；
-* 不同 Agent 之间交接困难；
-* 项目历史越长，重新建立项目理解的成本越高。
-
-现有方案通常通过以下方式解决：
-
-* 保存完整 Session；
-* Session Summary；
-* 长期 Memory；
-* 向量数据库；
-* RAG；
-* Current State；
-* Handoff 文档；
-* 状态机；
-* Event Projection；
-* 复杂治理。
-
-DeltaLayer v0 提出一个更小的假设：
-
-> **一个长期项目真正需要跨 Agent 保留下来的主要信息，可能不是完整历史，而是每一次有意义的语义变化。**
-
----
-
-# 3. 核心数据结构
-
-DeltaLayer v0 只有两个核心持久化对象：
-
-```text
-changes.jsonl
-PROJECT.md
-```
-
-以及一份 Agent 行为规范：
-
-```text
-AGENTS.md
-```
-
-整体结构：
+## 2. 核心持久化对象
 
 ```text
 project/
 ├── AGENTS.md
 ├── PROJECT.md
 └── .deltalayer/
-    └── changes.jsonl
+    ├── changes.jsonl              # legacy v0 history, read-only
+    └── changes/
+        ├── <conversation-delta>.json
+        └── <conversation-delta>.frozen.json
 ```
 
----
-
-# 4. changes.jsonl
-
-`changes.jsonl` 是 DeltaLayer 中最重要的数据。
-
-它保存项目的语义演化历史。
-
-它应当：
-
-* append-only；
-* 按时间保存；
-* 不主动删除旧变化；
-* 不因为后来出现新方案而修改旧记录；
-* 允许互相矛盾的历史变化同时存在。
-
-例如：
-
-```json
-{"time":"2026-09-21T09:30:00+08:00","source":"codex","changes":["决定使用方案 A 作为当前实现方向"]}
-{"time":"2026-09-21T11:10:00+08:00","source":"codex","changes":["方案 A 在真实验证中存在问题，当前改为方案 B"]}
-{"time":"2026-09-21T14:20:00+08:00","source":"codex","changes":["方案 B 仍无法满足约束，当前采用方案 C"]}
-```
-
-未来 Agent 不需要额外的冲突解决器。
-
-它可以直接理解：
-
-> A 曾经成立，后来改为 B，最终又改为 C。
-
----
-
-# 5. Change 的定义
-
-Change 不是：
-
-* 工作日志；
-* Session Summary；
-* 工具调用记录；
-* 推理过程；
-* TODO 列表；
-* 完整任务报告。
-
-Change 表达的是：
-
-> **某个时刻以后，项目世界与之前相比发生了什么具有持续意义的变化。**
-
-典型 Change 包括：
-
-### 能力变化
+语义分别是：
 
 ```text
-支持 PDF 导入。
+PROJECT.md
+= rebuildable current project view
+
+.deltalayer/changes/*.json
+= Conversation Delta history
+
+.deltalayer/changes.jsonl
+= previous v0 history; read-only compatibility
+
+source / tests / Git / workspace
+= authoritative present reality
 ```
 
-### 缺陷状态变化
+`.frozen.json` 仍是 Conversation Delta 文件，文件名只表达生命周期边界，不是新增的 schema status machine。
 
-```text
-修复 History reopen 后 verification 状态丢失的问题。
-```
+## 3. Conversation Delta 定义
 
-### 架构变化
+> **A Conversation Delta is the durable semantic difference between the project state at the beginning of a conversation and the project state at handoff.**
 
-```text
-主查询链由 RAG 调整为结构化数据库 + SQL。
-```
+这里的 conversation 是一次真实 Agent/chat conversation，不是开发任务：
 
-### 决策变化
+- 同一个对话中完成多个任务，仍然只属于同一个 Delta；
+- 用户没有新开对话，就继续维护同一个 active Delta；
+- 用户新开对话，就创建新的 Delta；
+- 一个对话没有 durable semantic change，也仍然保存自己的空 Delta。
 
-```text
-放弃方案 A，改用方案 B。
-```
+Conversation Delta 不是：
 
-### 重要事实被确认
+- execution transcript；
+- task report；
+- tool log；
+- every intermediate event；
+- every attempted solution。
 
-```text
-History replay 不会重新执行 verification。
-```
+它回答：
 
-### 项目方向发生变化
+> **What became durably different during this conversation?**
 
-```text
-当前开发重点由数据导入转向分析能力。
-```
-
-### 旧假设失效
-
-```text
-此前认为 Provider fallback 已完整覆盖，但真实测试证明 native runtime 仍缺少严格参数校验。
-```
-
----
-
-# 6. 什么不应该写入 Change
-
-以下内容默认不进入长期变化层：
-
-```text
-阅读了 12 个文件。
-运行了 pytest。
-尝试了三个方案。
-发现一个函数。
-重新启动了服务。
-做了浏览器测试。
-调查了数据库结构。
-```
-
-这些可能对完成当前工作有帮助，但如果没有改变长期项目语义，就不属于 Change。
-
-核心判断标准：
-
-> **如果未来 Agent 永远看不到本次完整对话，这条信息是否仍然值得它知道？**
-
-如果答案是否定的，则通常不应写入。
-
----
-
-# 7. Change 的写入时机
-
-DeltaLayer v0 不要求将 Change 限定在 Session 结束或某一种固定生命周期边界。
-
-Agent 可以根据语义判断，在项目发生有意义变化时留下 Change。
-
-例如：
-
-```text
-10:00
-选择方案 A
-→ 可以记录
-
-11:00
-发现 A 不成立，切换到 B
-→ 可以记录
-
-13:00
-B 验证失败，最终切换到 C
-→ 可以记录
-```
-
-这些都是真实的项目演化。
-
-不要求只保留最终 C。
-
-因此：
-
-> **Change 保存演化，而不是只保存最终结论。**
-
----
-
-# 8. Change Side Channel
-
-Agent 正常工作时，应始终具有一个额外的结构化输出通道：
+## 4. 最小 schema
 
 ```json
 {
-  "changes": []
-}
-```
-
-正常用户输出与 Change 输出是两个不同通道。
-
-例如：
-
-```text
-用户可见：
-
-功能已经完成，相关测试通过。
-```
-
-后台：
-
-```json
-{
-  "changes": [
-    "native runtime 新增严格工具参数校验",
-    "非法参数现在会在进入 Evidence Workspace 前被拒绝"
-  ]
-}
-```
-
-如果没有值得保留的长期变化：
-
-```json
-{
-  "changes": []
-}
-```
-
-空数组必须被视为完全正常的结果。
-
-DeltaLayer 不应该鼓励 Agent 为了“必须写东西”而制造低价值记录。
-
----
-
-# 9. Change 最小 Schema
-
-v0 推荐：
-
-```json
-{
-  "time": "2026-09-21T15:30:00+08:00",
+  "started_at": "2026-09-21T22:00:00+08:00",
+  "updated_at": "2026-09-21T23:15:00+08:00",
   "source": "codex",
   "conversation_id": "optional",
   "changes": [
-    "..."
+    "修复 coarse timestamp reader，并保留单文件 append order"
   ]
 }
 ```
 
-其中：
+字段约定：
 
-### `time`
+- `started_at`：conversation 开始时间；
+- `updated_at`：该 Delta 最近一次维护时间；
+- `source`：例如 `codex`、`claude`、`human`、`ci-agent`；
+- `conversation_id`：运行环境天然提供时可写入；不要求人为制造全局 ID；
+- `changes`：一组从 conversation start 到当前 handoff 的净持久语义变化。
 
-变化写入时间。
+不添加 `status`、`superseded_by`、`priority`、reducer metadata、sequence id、Lamport clock 或数据库字段。
 
-`time` SHOULD use an offset-aware ISO 8601 timestamp whenever available.
+## 5. Active Delta 与 frozen Delta
 
-例如：`2026-09-21T21:43:12+08:00`，或带 `Z` 的 UTC 时间。使用实际写入时间，不臆造缺失的时刻或时区，也不为符合新指导而补写旧历史。date-only 会丢失同日时间精度；单文件追加顺序仍可保留先后，但不能替代跨来源排序。
+Conversation 期间：
 
-这是写入指导，不新增排序或并发机制。prototype 自动生成带 offset 的时间，同时兼容已有 date-only 记录而不补造时刻；单一 JSONL 按追加位置检索和分页。包含具体时刻的 timestamp 仍要求时区。
+- 一个 conversation 只维护自己的 active Delta；
+- `changes[]` 表达从 conversation 开始到当前的净差异；
+- 可以添加、改写或删除当前 conversation 自己的 change item；
+- 同一 conversation 内完全撤销且不再有长期意义的中间变化，可以从当前 Delta 删除；
+- 不要求保留 debugging path。
 
-### `source`
+Conversation 结束或 handoff 完成时：
 
-变化来源，例如：
+- active 文件 freeze；
+- 后续 conversation 不得修改该文件；
+- 新事实只能进入新的 active Delta；
+- frozen 文件内容和字节保持不变。
 
-```text
-codex
-claude
-chatgpt
-human
-ci-agent
-```
+因此，v0.2 的 append-only 对象不是每个中间 event，而是已经 frozen 的 conversation file history。active 文件可以在自己的 conversation 中原子覆盖；frozen 文件永远不更新。
 
-### `conversation_id`
+### Conversation ownership
 
-可选。
+> **Conversation ownership comes from the current conversation's own remembered Delta path, never from discovering an existing active file.**
 
-用于需要时回到原 Session。
+新 conversation 永远 `start` 新文件，并在本对话上下文中记住返回的路径。同一 conversation 内后续任务只更新这个记住的路径；不能通过扫描目录、查找最新 active 文件或全局 `.current` 指针推断归属。不依赖产品提供真实 conversation ID。
 
-不作为连续性工作的必要信息。
+旧的未 frozen `.json` 可能来自异常中断、关闭窗口、崩溃或遗漏 freeze。它是 unfinished / active-at-last-write history，仍可读取已有 durable changes，但新 conversation 不得接管、更新或代为 freeze。`.frozen.json` 表示 completed handoff，不增加 `abandoned` 等状态字段。
 
-### `changes`
+`freeze` 保持显式调用，不增加 lifecycle manager 或 hook。普通任务回复不等于 conversation 结束：同一对话继续多个任务时保持同一个 active Delta，在最终 conversation handoff 时才 freeze。原型不能识别产品层的结束时点；这仍需真实 dogfood 验证，不宣称已经自动解决 lifecycle。
 
-一条或多条语义变化。
+## 6. 空 Conversation Delta
 
----
-
-# 10. PROJECT.md
-
-`PROJECT.md` 保存当前项目的高密度语义视图。
-
-例如：
-
-```markdown
-# Project
-
-## Goal
-
-构建一个可验证的结构化数据问数与分析系统。
-
-## Current Architecture
-
-- 结构化数据作为确定性问数主链
-- LLM 负责意图理解
-- SQL / 规则引擎负责确定性计算
-- Evidence Workspace 负责证据链
-- Verification 负责独立复核
-
-## Current Stage
-
-正在推进 v0.7 native runtime 稳定性。
-
-## Recently Completed
-
-- History replay 可恢复验证状态
-- native runtime 已增加参数校验
-
-## Known Constraints
-
-- 不允许根据 COMPLETED 状态猜测 verification
-- Report / Chart / Export 只能消费 Verified Claim
-
-## Open Areas
-
-- Provider failure 边界
-- runtime 参数和 provenance 一致性
-```
-
----
-
-# 11. PROJECT.md 的地位
-
-`PROJECT.md` 不是最高权威。
-
-它只是：
-
-> **当前项目语义状态的可重建视图。**
-
-换句话说：
-
-```text
-changes.jsonl
-= durable semantic history
-
-PROJECT.md
-= disposable materialized view
-```
-
-如果 `PROJECT.md`：
-
-* 过时；
-* 错误；
-* 被删除；
-* 内容发生冲突；
-
-系统仍然可以通过：
-
-```text
-changes.jsonl
-+
-LLM
-```
-
-重新生成它。
-
-因此：
-
-> **Changes 保存历史，PROJECT.md 保存方便。**
-
----
-
-# 12. 为什么仍然保留 PROJECT.md
-
-理论上，新 Agent 可以只读 Change。
-
-但随着项目长期运行，changes.jsonl 可能逐渐增长。
-
-即使总数据量仍然很小，大多数 Agent 也没必要每次重新理解全部历史。
-
-因此加入一个轻量当前视图：
-
-```text
-PROJECT.md
-```
-
-可以把 cold start 成本进一步降低。
-
-理想启动层级：
-
-```text
-PROJECT.md
-↓
-Recent Changes
-↓
-Older Changes
-↓
-Source / Git / Task Body
-```
-
-每一层仅在上一层信息不足时继续深入。
-
----
-
-# 13. 新 Agent 的启动行为
-
-新 Agent 进入项目后：
-
-## Step 1
-
-首先读取：
-
-```text
-PROJECT.md
-```
-
-获得项目当前概览。
-
-## Step 2
-
-读取最近的 Change。
-
-例如最近：
-
-```text
-3～5 条
-```
-
-但这一数量不是固定规则。
-
-## Step 3
-
-Agent 自己判断：
-
-> 当前上下文是否足够完成任务？
-
-如果足够：
-
-```text
-STOP READING HISTORY
-```
-
-开始工作。
-
-如果不足：
-
-```text
-继续向更早 Changes 回溯
-```
-
-直到模型认为：
-
-> 已经理解到足够安全、正确地继续工作。
-
----
-
-# 14. Model-Decided Retrieval Depth
-
-DeltaLayer 不设固定历史读取深度。
-
-不规定：
-
-```text
-top_k = 10
-```
-
-也不规定：
-
-```text
-始终加载最近 50 条
-```
-
-因为不同任务需要的历史深度不同。
-
-实际实验已经观察到：
-
-```text
-某个任务：
-3 条不够
-→ 继续读到 8 条
-→ Agent 判断足够
-
-另一个任务：
-3 条已经够
-→ 直接停止
-```
-
-因此读取原则是：
-
-> **Recency-first, model-decided depth.**
-
-中文：
-
-> **最近优先，读取深度由模型自行决定。**
-
----
-
-# 15. 不使用源码作为项目历史数据库
-
-源码负责回答：
-
-> **现在真实存在什么？**
-
-Changes 负责回答：
-
-> **为什么会变成现在这样？**
-
-因此：
-
-```text
-Source Code
-= present implementation
-
-Changes
-= semantic evolution
-```
-
-新 Agent 不应为了恢复项目背景而默认扫描整个仓库。
-
-正确顺序是：
-
-```text
-PROJECT.md
-↓
-Changes
-↓
-建立项目地图
-↓
-只读取完成当前任务所需的相关源码
-```
-
-但当 Change 与实际源码发生冲突时：
-
-> **当前源码、测试结果和实际工作区仍然代表当前现实。**
-
-Change 不是代码事实数据库。
-
----
-
-# 16. 外部变化与缺失历史
-
-真实项目可能被以下主体改变：
-
-* 人工修改；
-* Git merge；
-* 其他 Agent；
-* CI；
-* 未接入 DeltaLayer 的工具。
-
-因此可能出现：
-
-```text
-Changes:
-数据库仍为 SQLite
-
-现实：
-源码已经是 PostgreSQL
-```
-
-这不被视为系统崩溃。
-
-Agent 应理解：
-
-> 存在尚未记录或尚未读取的变化来源。
-
-随后可自行：
-
-* 查看 Git；
-* 查看其他 Agent Changes；
-* 检查源码；
-* 询问用户。
-
-并可以留下新的 Change：
-
-```text
-检测到此前未记录的外部变化：数据库已从 SQLite 迁移至 PostgreSQL。
-```
-
----
-
-# 17. 并行 Agent
-
-多个 Agent 可以同时产生 Change。
-
-例如：
+每一个 conversation 都必须有一个 Delta 文件，即使没有 durable change：
 
 ```json
-{"time":"2026-09-21T10:31:00+08:00","source":"codex-A","changes":["认证模块增加 token refresh"]}
-{"time":"2026-09-21T10:32:00+08:00","source":"codex-B","changes":["数据库新增 migration 021"]}
+{
+  "started_at": "2026-09-21T22:00:00+08:00",
+  "updated_at": "2026-09-21T22:00:00+08:00",
+  "source": "codex",
+  "changes": []
+}
 ```
 
-DeltaLayer v0 不要求提前计算：
+它表示：
 
-* merge；
-* branch；
-* authority；
-* precedence。
+> **This conversation existed but produced no durable semantic project change.**
 
-未来 LLM 根据：
+读取 continuity 时可以跳过它的 semantic content，但不得删除文件。原型的 `recent` 会保留它作为历史项；`rebuild-context` 将它放入 `empty_conversations`，不把空数组当成语义变化。
 
-* 时间；
-* 来源；
-* Change 语义；
+## 7. Change Writing Discipline
 
-自行理解并行关系。
+A Conversation Delta should be much smaller than the conversation that produced it。
 
-如果两个并行任务产生真正冲突：
+通常推荐 1–4 个 concise semantic changes，但这不是硬性 schema 限制。每个 item 至少回答一个问题：
+
+- What is now materially different?
+- What important belief or assumption changed?
+- What project decision or boundary changed?
+
+不要记录：
+
+- files read；
+- commands run；
+- ordinary test execution detail；
+- step-by-step debugging；
+- temporary attempts；
+- failed approaches with no lasting consequence；
+- unchanged facts；
+- full validation reports；
+- ordinary TODO lists；
+- 已经由 `PROJECT.md` 充分表达的背景。
+
+只有在验证建立了新的重要 project baseline 时，验证结果才值得进入 Delta。
+
+强过滤器：
+
+> **If a future agent could omit this sentence without materially changing its understanding or next decision, do not record it.**
+
+`changes` 保存 semantic difference，不是 evidence package。测试报告、原始 session 和 provenance 应保存在适当的实验材料中，而不是塞进每个 Delta。
+
+## 8. 新 conversation 的读取逻辑
+
+新 conversation 启动时：
+
+1. Read `PROJECT.md`；
+2. Read 最近的 `.deltalayer/changes/*.json` Conversation Deltas；
+3. 信息不足时，按最近优先继续读取更旧的 Conversation Deltas；
+4. 仍不足时，继续读取 legacy `.deltalayer/changes.jsonl`；
+5. Agent 判断已经足够后停止回溯；
+6. 用 source、tests、Git 和 workspace 核验当前现实；
+7. 新 conversation 永远创建新 Delta，将路径记在当前对话中；后续任务复用该路径，绝不接管发现的旧 active 文件。
+
+不因为目录里有 1,000 个 Delta 就全部读取。历史可以无限增长，context read depth 仍由模型判断并保持有界。空 Delta 可以快速跳过 semantic content，但文件仍然存在于历史。
+
+## 9. 文件名、顺序与时间
+
+新文件名使用 `started_at + source + collision-safe suffix`。原型会把不适合作为文件名的字符转换为安全形式，并在同一时间和 source 冲突时追加数字后缀。
+
+`started_at` 与 `updated_at` 应尽量使用 offset-aware ISO 8601 timestamp：
+
+> `time` SHOULD use an offset-aware ISO 8601 timestamp whenever available.
+
+不要因为指导变更而补写旧时间、补造时区或修改旧 evidence。
+
+Conversation history 的顺序必须稳定且可确定。原型按 `updated_at`、`started_at` 和文件名读取最近 Conversation Deltas；单个 legacy JSONL 内仍按物理 append order 读取。timestamp 是元数据，不是跨来源 authority，不引入分布式排序协议。
+
+Conversation cursor 使用文件名；legacy cursor 继续兼容旧的 time/line cursor。分页使用已有的 `older` 机制，必要时从 Conversation Delta history 继续落入 legacy history。
+
+## 10. 并行 conversation
+
+不同 conversation 各自拥有文件：
 
 ```text
-Agent A：
-Session 存储迁移到 Redis。
-
-Agent B：
-继续扩展数据库 Session。
+Agent A -> A's active/frozen Conversation Delta
+Agent B -> B's active/frozen Conversation Delta
 ```
 
-后续 Change 可以记录真实收敛结果：
+它们不需要争用同一个 `changes.jsonl` writer。v0.2 不设计 merge engine、authority resolver 或并发治理系统。若后续真实 dogfood 暴露复杂并行冲突，再单独处理。
+
+## 11. PROJECT.md
+
+`PROJECT.md` 仍然是 mutable / rebuildable current view，不是历史本身。
+
+当新事实使它过期时：
+
+- revise/remove stale current-state claims；
+- current view 不能承担历史保存责任；
+- 历史位于 frozen Conversation Deltas 和 legacy history 中；
+- source、tests、Git 和 workspace 仍是 present implementation 的权威。
+
+这一维护原则没有因为 v0.2 改变。
+
+## 12. Legacy compatibility
+
+`.deltalayer/changes.jsonl` 是 v0 history：
+
+- 新 reader 必须支持它；
+- 读取顺序上，新的 Conversation Deltas 先读，必要时再进入 legacy；
+- legacy 文件只读，不因迁移而追加、重排、重写或转换；
+- 不迁移 Workbench/Qicetai 的真实历史来让目录看起来整齐；
+- 旧 evidence 必须保持字节不变。
+
+旧 history 中存在 date-only 或其他低精度时间时，reader 应保留可读性；不得为读取而伪造具体时刻。单一文件的物理 append order 可以作为该文件内部事件顺序，但不能冒充跨来源全局时钟。
+
+## 13. Prototype CLI
+
+原型提供最小的 conversation-oriented 操作：
 
 ```text
-发现两条并行实现冲突，最终统一采用 Redis Session。
+init
+start
+update
+show
+current
+freeze
+recent
+older
+rebuild-context
 ```
 
----
+典型流程：
 
-# 18. AGENTS.md 规则
+```powershell
+$delta = python prototype/deltalayer.py --root ./demo-project `
+  start --source codex | ConvertFrom-Json
 
-推荐加入：
+python prototype/deltalayer.py --root ./demo-project `
+  update --conversation $delta._path `
+  --change "完成一个持久语义变化"
 
-```markdown
-## Project Continuity
-
-This project maintains an LLM-native semantic change history.
-
-### When starting work
-
-1. Read `PROJECT.md`.
-2. Read the most recent semantic changes.
-3. If the current project context is not sufficient to safely and correctly perform your work, continue reading older changes in reverse chronological order.
-4. Stop reading history when you judge that you understand enough to proceed.
-5. Do not scan the full repository merely to reconstruct project history.
-6. Use source code, tests, Git, and the actual workspace to verify the present implementation when needed.
-
-### While working
-
-Maintain a `changes[]` side channel.
-
-Whenever you determine that the project has undergone a durable semantic change, append a concise change record.
-
-`time` SHOULD use an offset-aware ISO 8601 timestamp whenever available.
-Use the actual recording time with an explicit UTC offset or `Z` when available.
-Do not invent missing time or timezone information or rewrite old history.
-
-Changes may include:
-- capabilities added or removed;
-- bugs fixed;
-- architecture changed;
-- decisions changed;
-- important facts established;
-- old assumptions invalidated;
-- project direction changed.
-
-Do not record:
-- reasoning;
-- temporary investigation;
-- tool activity;
-- failed attempts with no lasting relevance;
-- unchanged information.
-
-`changes: []` is valid when nothing durable changed.
-
-### Current project view
-
-`PROJECT.md` is a convenient current semantic view, not immutable truth.
-
-When your work or newly-read changes materially alter the current project understanding, update `PROJECT.md`.
-
-The semantic change history is durable. `PROJECT.md` must remain reconstructable from project history and current reality.
+python prototype/deltalayer.py --root ./demo-project `
+  freeze --conversation $delta._path
 ```
 
----
+CLI 无法天然知道真实 ChatGPT/Codex conversation ID，因此通过显式 Delta path 模拟 conversation ownership。它不假装拥有产品层 session identity。
 
-# 19. DeltaLayer 不是什么
+`update` 会原子覆盖当前 active 文件；`freeze` 将其改为 `.frozen.json`；对 frozen 文件的 update 会失败。`start` 永远创建新文件，即使 changes 为空。`recent` 先读取 Conversation Deltas，再 fallback 到 legacy；`rebuild-context` 打包 `PROJECT.md`、recent semantic deltas、empty conversation metadata 和 legacy fallback。
 
-DeltaLayer v0 不是：
+原型不调用模型，不自动从对话提取变化，不提供数据库、RAG、锁服务、reducer 或自动摘要服务。
 
-### Memory Database
+## 14. 当前证据与版本定位
 
-它不试图记住用户和世界中的所有事实。
+DeltaLayer v0.2 是 Open Design Proposal + Experimental Prototype，不是成熟插件发布。
 
-### RAG System
+此前公开证据包括：
 
-它不通过 embedding 做默认检索。
+- **Workbench Case 1**：真实 cross-conversation continuation；
+- **Qicetai Case 2**：unstable external dependencies 下的 temporal semantic evolution；
+- QCT retrospective 48 deltas、Phase 4 和 H5。
 
-### Vector Store
+这些案例发生时使用的是共享 append-only `changes.jsonl`。它们帮助暴露了 current view、时间精度和历史边界问题，并促成 conversation-granularity model，但不证明它们当时已经使用了 per-conversation files。
 
-v0 不需要向量数据库。
+**H5 仍为 `PARTIALLY_SUPPORTED`。** 现有证据不证明总 token 成本下降、长期可靠性、所有 Agent 的正确时间解释或 Conversation Delta 优于高质量 handoff。
 
-### Logging System
+## 15. 不是什么
 
-它不保存所有操作事件。
+DeltaLayer v0.2 不是：
 
-### Session Summary System
+- memory database；
+- RAG system；
+- vector store；
+- execution transcript；
+- event-sourcing runtime；
+- deterministic reducer；
+- governance or authority system；
+- source-of-truth for code；
+- 自动摘要服务。
 
-它不总结每次对话。
+当前实现继续由源码、测试、Git 和实际 workspace 体现。DeltaLayer 只保存有长期意义的项目语义差异，并把历史解释交回给 LLM。
 
-### Event Sourcing Runtime
+## 16. 最终原则
 
-它不要求 deterministic reducer。
+> **Persist one semantic delta per conversation.**
 
-### Governance System
+每个 conversation 都留下一个 Delta 文件，哪怕它为空。
 
-它不要求 authority、approval 或 conflict resolver。
+> **Active Delta may change; frozen Delta never changes.**
 
-### Source-of-Truth for Code
+当前对话可以修订自己的净变化，交接后文件冻结。
 
-当前实现仍然由源码、测试和现实工作区体现。
+> **The current conversation may revise its own delta. Past conversations may not.**
 
----
+> **New Conversation Deltas first; legacy history remains readable.**
 
-# 20. v0 明确不加入的能力
+新模型优先读取 Conversation Delta，旧 shared JSONL 继续只读兼容。
 
-除非真实实验证明有必要，v0 不加入：
+> **Writers should be precise; readers should be tolerant.**
 
-* embedding；
-* vector database；
-* semantic search；
-* RAG；
-* memory scorer；
-* summary tree；
-* reducer；
-* deterministic projection；
-* branch；
-* merge；
-* authority；
-* conflict resolver；
-  -云服务；
-  -复杂数据库；
-  -独立总结 Agent。
+写入尽量精确，读取不要因为粗糙时间元数据丢掉语义历史。
 
-原则：
-
-> **没有实验需求，不增加基础设施。**
-
----
-
-# 21. 当前实验支持
-
-目前已有实验给出以下有限证据。
-
-## Change 可生成
-
-长期 Agent 可以在正常工作之外额外生成结构化变化字段。
-
-## Change 信息密度较高
-
-48 个真实开发任务中：
-
-```text
-Task 最终消息：
-40,555 字符
-
-Delta JSON：
-10,398 字符
-
-纯 changes：
-4,585 字符
-```
-
-纯语义变化约为同组最终消息字符数的：
-
-```text
-11.3%
-```
-
-该比例尚不是完整 Session 压缩比。
-
-## Agent 能自主控制回溯深度
-
-真实实验中出现：
-
-```text
-3 → 8 → stop
-```
-
-以及：
-
-```text
-3 → stop
-```
-
-两种读取模式。
-
-## Delta 可作为真实开发前置上下文
-
-已有真实任务完成：
-
-```text
-Delta
-→ Source
-→ Tests
-→ Patch
-```
-
-未观察到 Delta 导致明显错误先验。
-
-## 当前限制
-
-尚未证明：
-
-* Delta 显著降低总体 token 成本；
-* Delta 显著减少所有类型的源码考古；
-* Delta 在所有长期项目中优于高质量 handoff/summary。
-
-因此当前定位应保持为：
-
-> **低成本项目连续性 primitive。**
-
-而不是：
-
-> 已被证明优于所有 Agent Memory 系统的通用方案。
-
----
-
-# 22. 核心价值
-
-DeltaLayer 主要追求四个价值。
-
-## Continuity
-
-新 Agent 不必完全重新认识项目。
-
-## Compression
-
-无需把整个过去重新塞入上下文。
-
-## Semantic Stability
-
-减少已经废弃的方案、过程噪声和长上下文造成的语义干扰。
-
-## Handoff
-
-Codex、Claude、GPT 或未来其他 Agent 可以通过同一份变化历史继续工作。
-
----
-
-# 23. 设计哲学
-
-传统长期记忆系统通常试图：
-
-> 让基础设施替模型理解历史。
-
-DeltaLayer 采取相反方向：
-
-> **让基础设施保持极笨，让 LLM 保持极聪明。**
-
-基础设施只负责：
-
-```text
-保存变化
-记录时间
-记录来源
-提供历史
-```
-
-模型负责：
-
-```text
-理解新旧关系
-理解废弃和替代
-理解并行
-判断读取深度
-重建当前项目模型
-决定下一步工作
-```
-
----
-
-# 24. 最小闭环
-
-DeltaLayer v0 的完整闭环可以压缩成：
-
-```text
-           PROJECT.md
-                │
-                ▼
-        New Agent Starts
-                │
-                ▼
-          Recent Changes
-                │
-          context enough?
-          ┌─────┴─────┐
-         yes          no
-          │            │
-          │       Older Changes
-          │            │
-          └──────┬─────┘
-                 ▼
-               Work
-                 │
-        meaningful change?
-          ┌──────┴──────┐
-         yes            no
-          │              │
-   append changes       nothing
-          │
-          ▼
-     update PROJECT.md
-       when useful
-```
-
----
-
-# 25. 最终原则
-
-DeltaLayer v0 可以被压缩成四句话：
-
-> **Every meaningful change leaves a trace.**
-
-每一个有意义的变化都留下痕迹。
-
-> **History is append-only.**
-
-历史只追加，不重写。
-
-> **Future agents read backward until they understand enough.**
-
-未来 Agent 从最近变化向过去读取，直到自己认为足够。
-
-> **Current state is a view, not the history itself.**
-
-当前状态只是历史的一个视图，不是历史本身。
-
-最终：
-
-> **Persist change, not context.
-> Let the next model reconstruct the rest.**
+> **Persist change, not context. Let the next model reconstruct the rest.**

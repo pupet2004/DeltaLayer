@@ -1,58 +1,81 @@
-# DeltaLayer v0 Prototype
+# DeltaLayer v0.2 Prototype
 
-发布包中的标准库原型。本文列出本包可执行的命令和边界。
+发布包中的标准库原型。它模拟 conversation-granularity Delta，不假装知道真实 ChatGPT/Codex conversation ID。
 
 ## 试用
 
-Python 3.10+。以下命令从 **DeltaLayer 仓库根目录** 执行，无需安装第三方依赖：
+Python 3.10+。以下命令从 **DeltaLayer 仓库根目录** 执行，无需第三方依赖：
 
 ```powershell
 $env:PYTHONIOENCODING = 'utf-8'
 python prototype/deltalayer.py --root ./demo-project init
-python prototype/deltalayer.py --root ./demo-project append --source human --change "选择语义变化作为项目连续性实验入口"
-python prototype/deltalayer.py --root ./demo-project append --source human
+$delta = python prototype/deltalayer.py --root ./demo-project start --source human | ConvertFrom-Json
+python prototype/deltalayer.py --root ./demo-project update --conversation $delta._path --change "选择 Conversation Delta 作为连续性入口"
+python prototype/deltalayer.py --root ./demo-project current --conversation $delta._path
+python prototype/deltalayer.py --root ./demo-project freeze --conversation $delta._path
 python prototype/deltalayer.py --root ./demo-project recent --limit 3
 python prototype/deltalayer.py --root ./demo-project rebuild-context --limit 3
 python -m unittest discover -s prototype -p "test_*.py" -v
 ```
 
-不传 `--change` 会追加 `changes: []`，多项变化则重复传 `--change`。省略 `--time` 时使用带时区的运行时本地时间。
+`start` 总是创建一个新 Delta 文件，省略 `--change` 时也会持久化 `changes: []`。`update` 用重复的 `--change` 替换当前 active Delta 的净变化；不传 `--change` 会将当前 Delta 更新为空。`freeze` 将文件改名为 `.frozen.json`，之后不能 update。
 
-`init` 创建 `PROJECT.md` 和 `.deltalayer/changes.jsonl`，并在目标 `AGENTS.md` 追加一次带标记的行为约定；已有视图和历史不会被清空。完整示例见 [`examples/`](examples/)。
+## 文件结构
 
-## 时间戳约定
+```text
+.deltalayer/
+├── changes.jsonl          # legacy v0 history, read-only
+└── changes/
+    ├── <conversation>.json
+    └── <conversation>.frozen.json
+```
 
-`time` SHOULD use an offset-aware ISO 8601 timestamp whenever available.
+Conversation Delta 的 schema：
 
-例如 `2026-09-21T21:43:12+08:00`，或带 `Z` 的 UTC 时间。不要臆造缺失的时刻或时区，也不要补写旧记录。
-
-`now_timestamp()` 仍自动生成本地 offset-aware 时间。原型兼容已有的 `YYYY-MM-DD` date-only 值，按日期解析，不转换成午夜或补造时区；返回值、游标和历史文件保留日期精度。显式 `--time` 也接受日期；包含具体时刻的 timestamp 仍须带时区，非法日期仍拒绝。
-
-[Qicetai Case 2](../docs/native-dogfood-qicetai-20260921.md) 与 evidence 快照记录的是归档时会跳过末两条 date-only 的旧行为。兼容性修复后，原始九条记录均可读取并分页，没有警告；历史证据不随实现修复改写。
-
-## 向前读取
-
-单一 JSONL 的事件顺序由追加位置决定。`recent` 从文件末尾向前返回；即使时间倒退、重复或混合日期与完整 timestamp，也不按时间重排。
-
-`recent` 返回 `next_before`。把完整游标传给 `older --before`；沿用已有的 `<time>#line=<物理行号>` 格式，以行号划定排他分页边界，不用缺失的具体时刻做比较。例如 `2026-09-21#line=8` 保留日期精度，下一页读取第 8 行之前的有效记录。
-
-```powershell
-$page = python prototype/deltalayer.py --root ./demo-project recent --limit 1 | ConvertFrom-Json
-if ($page.next_before) {
-    python prototype/deltalayer.py --root ./demo-project older --before $page.next_before --limit 5
+```json
+{
+  "started_at": "2026-09-21T22:00:00+08:00",
+  "updated_at": "2026-09-21T23:15:00+08:00",
+  "source": "codex",
+  "conversation_id": "optional",
+  "changes": ["durable semantic difference"]
 }
 ```
 
-模型决定是否继续回溯，CLI 不替模型判断是否理解足够。`rebuild-context` 只打包既有视图、最近记录及游标，不调用模型，也不重写 `PROJECT.md`。
+`conversation_id` 只有运行环境天然提供时才传入。原型通过显式 Delta path 让用户选择当前 conversation；它不制造或推断产品层 ID。
 
-旧式 `older --before <offset-aware timestamp>` 在历史全部为带时区 timestamp 时仍支持排他时间过滤，结果保持追加位置倒序；它不是完整游标分页。边界或历史中存在 date-only 时，该形式会明确报错并要求完整游标，避免猜测同日先后或默默遗漏记录。
+Conversation ownership comes from the current conversation's own remembered Delta path, never from discovering an existing active file.
+
+新 conversation 永远调用 `start`，将返回的 `_path` 记在本对话上下文；同一对话连续多个任务也只更新该路径。旧的未 frozen `.json` 仍是可读的 unfinished / active-at-last-write history，不能被新对话接管、更新或代为冻结。不创建全局 `.current` 指针。
+
+`current` 只是显式路径的读取命令，不是自动寻找“我的文件”。CLI 不验证真实产品身份，知道旧 active 路径的调用者技术上仍能传给 `update`；ownership 是 Agent 协议，不是访问控制保证。`freeze` 保持显式，只在最终 conversation handoff 调用，不在每次任务回复自动执行。不添加 lifecycle manager 或 hook。
+
+## 读取与分页
+
+`recent` 先读取 `.deltalayer/changes/*.json`，按 `updated_at`、`started_at` 和文件名稳定排序，再 fallback 到 legacy JSONL。空 Delta 会出现在历史读取中，但 `rebuild-context` 会把它放入 `empty_conversations`，不把空数组当成语义变化。
+
+```powershell
+$page = python prototype/deltalayer.py --root ./demo-project recent --limit 3 | ConvertFrom-Json
+if ($page.next_before) {
+    python prototype/deltalayer.py --root ./demo-project older --before $page.next_before --limit 3
+}
+```
+
+Conversation cursor 使用文件名；legacy cursor 继续接受旧的 ISO time / line 形式。`older` 可以从 Conversation Delta 文件跨页进入 legacy history。旧 `changes.jsonl` 只读，不会因为新模型而迁移或重写。
+
+## 时间与写入边界
+
+`started_at` 与 `updated_at` SHOULD use an offset-aware ISO 8601 timestamp whenever available。不要为了新规则补造旧时刻或时区。reader 仍接受 date-only，并保留原始精度；单一 JSONL 的物理 append order 是该文件内部事件顺序，不按 timestamp 重排。
+
+active Delta 更新使用同目录临时文件加原子替换；新文件使用 collision-safe 文件名。原型没有数据库、lock service、RAG、reducer 或自动摘要服务。
 
 ## 边界
 
-- 读取会扫描完整本地文件，按追加位置倒序选页返回给 Agent；没有大规模性能保证。
-- 保持历史只追加。时间戳是记录信息，不证明因果或权限。
-- 使用单写入者；没有多进程协调、事务级崩溃恢复或防篡改保证。
-- 坏 JSON / UTF-8 行会被警告并跳过，不会自动修复。追加时会分隔缺失换行的末行，同时保留旧字节。
-- 当前视图准确性和 change 语义质量由 Agent 与使用者负责。它不是自动接入所有 Agent 的插件。
+- 原型不会调用模型或自动从对话提取 changes。
+- `PROJECT.md` 是可重建 current view，不是历史权威。
+- source、tests、Git 和实际 workspace 仍负责验证当前现实。
+- malformed Conversation Delta 或 legacy 行会被单独 warning 并跳过，不会摧毁其他历史。
+- 读取会扫描本地历史，没有大规模性能保证。
+- 这是文件级 single-writer 原型，不提供多进程协调、崩溃恢复或防篡改保证。
 
-本次兼容性修复运行 **21 项单元测试，全部通过**，覆盖字节保留、空变化、非法输入、坏行、断尾、重复日期、混合精度、时间倒退、翻页期间追加、CLI、context 打包与 2,500 条记录分页。这证明的是机械行为，不是 H5 的总成本假设。
+当前测试覆盖 conversation lifecycle（包括中断后新对话不接管旧 active）、legacy fallback、混合时间精度、冻结、空 Delta、损坏文件、collision、CLI 和 2,500 个 Conversation Delta 分页场景。

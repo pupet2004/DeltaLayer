@@ -93,6 +93,18 @@ This corpus is distinct from the QCT retrospective 48 deltas and the Phase 4/H5 
 
 The last two records contain date-only `time` values. Native file order preserved their sequence, but at archival time the prototype reader warned and skipped them because it required timezone offsets. This finding motivated the writing guideline: `time` SHOULD use an offset-aware ISO 8601 timestamp whenever available. A subsequent compatibility fix accepts date-only values without inventing times and uses single-file append order for cursor pagination. Read-only verification now retrieves all nine original records without warnings or loss. The case and evidence snapshots retain the original finding unchanged; this repair is not new evidence of agent reliability. **H5 remains `PARTIALLY_SUPPORTED`.**
 
+## Design Evolution: Conversation Delta Model
+
+The first two native cases used a shared append-only `.deltalayer/changes.jsonl`. That is the historical evidence model and remains readable. Subsequent design work moves the append-only boundary to the conversation level:
+
+- one real conversation owns one Delta file;
+- the active file may be updated to its net semantic difference;
+- handoff freezes that file;
+- a later conversation creates a new file;
+- the legacy JSONL is preserved as read-only fallback.
+
+This is a design upgrade, not a retrospective claim about Workbench or Qicetai. Their evidence remains byte-stable and continues to describe the model that actually ran at the time. The v0.2 prototype tests the lifecycle, empty Delta persistence, frozen-file protection, mixed legacy reading, malformed-file isolation and 2,500-file pagination. It does not add evidence for H5 or claim that conversation-granularity storage is universally superior.
+
 ## Next Falsification Step
 
 The next experiment should use a complete, identical test environment; generate changes online; compare source-only, high-quality handoff, Delta-only and Delta plus current view; use tasks spanning at least two architectural transitions; and record writing, reading, source inspection, rework, correctness and total cost. Unmeasured values should remain `null`.

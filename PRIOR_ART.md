@@ -8,7 +8,7 @@
 
 重点不在“别人有没有记忆”，而在保存单位、读取方式、历史解释责任和当前视图的地位。
 
-| 工作 | 官方材料描述的重点 | DeltaLayer v0 的取舍 |
+| 工作 | 官方材料描述的重点 | DeltaLayer v0.2 的取舍 |
 | --- | --- | --- |
 | PROJECTMEM [1] | 以 append-only 事件保存问题、尝试、修复和决策；支持 supersedes、summary 与预检查 | 只要求语义变化记录，不要求独立判断/预检查层；追加历史与保留被替代决策不是本提案独有 |
 | Handoff / progress artifacts [2] | 为下一轮工作留下进度、Git 记录、功能清单与可运行环境 | 变化历史与当前视图分离；认真维护的 handoff 是必须保留的强对照 |
@@ -54,4 +54,6 @@ Intent 的共享 spec 与 `PROJECT.md` 都提供便于阅读的项目理解，�
 6. Mem0 官方 Update 文档：`https://docs.mem0.ai/core-concepts/memory-operations/update`
 7. LangGraph 官方 Persistence 文档：`https://docs.langchain.com/oss/python/langgraph/persistence`
 
-欢迎补充更早、更接近的协议、论文或工程实践，尤其是已经同时采用 semantic changes、append-only、模型自主回溯和可丢弃当前视图的工作。
+v0.2 把保存单位从共享 event log 收窄为 conversation-owned Delta file：active conversation 可以更新自己的净变化，handoff 后冻结，legacy shared JSONL 只读兼容。这不是声称发明了 conversation/session artifacts、append-only history 或 handoff；它只是当前对最小存储边界的具体设计选择。
+
+欢迎补充更早、更接近的协议、论文或工程实践，尤其是已经同时采用 semantic changes、conversation-level artifacts、模型自主回溯和可丢弃当前视图的工作。
