@@ -83,6 +83,16 @@ Recorded outcomes include Storage 321/321, a default suite of 1,251 passed / 0 f
 
 The observed handoff was usable across several fresh conversations. This is one project, primarily one agent family, one day and a small native history, with no long-horizon degradation or broad multi-agent concurrency evidence. It does not establish general reliability, token savings or comparative cost reduction. **H5 remains `PARTIALLY_SUPPORTED`**, unchanged by this case.
 
+## Native Dogfood Case 2 — Qicetai
+
+The [2026-09-21 Qicetai case](docs/native-dogfood-qicetai-20260921.md) concerns **temporal semantic evolution under unstable external dependencies**, rather than the **cross-conversation continuation** observed in Workbench Case 1. Its [nine native online records](evidence/qicetai-20260921/changes.jsonl) preserve search availability, synthetic-DNS page rejection, temporary network recovery, upstream search timeouts, renewed DNS rejection, and a later URL-safety-boundary fix.
+
+The final view records 183 passing tests (85 original, 98 new security cases) and a fresh-process DeepSeek search -> page -> answer pass under Fake-IP. These are historical reports, not product tests rerun for this archive. Earlier failures remain valid observations of their time; neither this case nor its current view rewrites them into successes. The [evidence bundle](evidence/qicetai-20260921/README.md) redacts one local install path and preserves commit ids, counts and event order.
+
+This corpus is distinct from the QCT retrospective 48 deltas and the Phase 4/H5 continuation experiments. It is one project, one day, primarily one agent environment and a small history, with unstable external dependencies, no long-horizon degradation measurement and no broad concurrent-writer evidence. It does not establish universal temporal reasoning, general reliability or token savings.
+
+The last two records contain date-only `time` values. Native file order preserved their sequence, but at archival time the prototype reader warned and skipped them because it required timezone offsets. This finding motivated the writing guideline: `time` SHOULD use an offset-aware ISO 8601 timestamp whenever available. A subsequent compatibility fix accepts date-only values without inventing times and uses single-file append order for cursor pagination. Read-only verification now retrieves all nine original records without warnings or loss. The case and evidence snapshots retain the original finding unchanged; this repair is not new evidence of agent reliability. **H5 remains `PARTIALLY_SUPPORTED`.**
+
 ## Next Falsification Step
 
 The next experiment should use a complete, identical test environment; generate changes online; compare source-only, high-quality handoff, Delta-only and Delta plus current view; use tasks spanning at least two architectural transitions; and record writing, reading, source inspection, rework, correctness and total cost. Unmeasured values should remain `null`.
