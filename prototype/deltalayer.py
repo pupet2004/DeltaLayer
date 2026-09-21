@@ -7,7 +7,7 @@ import argparse
 import json
 import os
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import date, datetime
 from pathlib import Path
 import sys
 from typing import Any
@@ -78,7 +78,7 @@ class DeltaError(ValueError):
 class Event:
     value: dict[str, Any]
     line: int
-    timestamp: datetime
+    timestamp: date | datetime
 
     @property
     def cursor(self) -> str:
@@ -91,14 +91,16 @@ class ReadResult:
     warnings: list[dict[str, Any]]
 
 
-def parse_timestamp(value: str) -> datetime:
+def parse_timestamp(value: str) -> date | datetime:
     if not isinstance(value, str) or not value.strip():
         raise DeltaError("time must be a non-empty ISO 8601 string")
     text = value.strip().replace("Z", "+00:00")
     try:
+        if len(text) == 10 and text[4] == "-" and text[7] == "-":
+            return date.fromisoformat(text)
         parsed = datetime.fromisoformat(text)
     except ValueError as exc:
-        raise DeltaError("time must be a valid ISO 8601 timestamp") from exc
+        raise DeltaError("time must be a valid ISO 8601 date or timestamp") from exc
     if parsed.tzinfo is None:
         raise DeltaError("time must include a timezone offset")
     return parsed
@@ -108,11 +110,11 @@ def now_timestamp() -> str:
     return datetime.now().astimezone().isoformat(timespec="seconds")
 
 
-def format_cursor(timestamp: datetime, line: int) -> str:
+def format_cursor(timestamp: date | datetime, line: int) -> str:
     return f"{timestamp.isoformat()}#line={line}"
 
 
-def parse_cursor(value: str) -> tuple[datetime, int]:
+def parse_cursor(value: str) -> tuple[date | datetime, int]:
     if "#line=" not in value:
         return parse_timestamp(value), 0
     timestamp, raw_line = value.rsplit("#line=", 1)
@@ -224,7 +226,8 @@ class DeltaStore:
                     warnings.append(
                         {"line": line_number, "error": str(exc), "skipped": True}
                     )
-        events.sort(key=lambda event: (event.timestamp, event.line), reverse=True)
+        # Within one append-only file, position is the event order, not wall-clock time.
+        events.reverse()
         return ReadResult(events, warnings)
 
     def recent(self, limit: int = 5) -> ReadResult:
@@ -236,11 +239,18 @@ class DeltaStore:
         validate_limit(limit)
         cursor_time, cursor_line = parse_cursor(before)
         result = self._read()
-        selected = [
-            event
-            for event in result.events
-            if (event.timestamp, event.line) < (cursor_time, cursor_line)
-        ]
+        if cursor_line:
+            selected = [event for event in result.events if event.line < cursor_line]
+        else:
+            if not isinstance(cursor_time, datetime) or any(
+                not isinstance(event.timestamp, datetime) for event in result.events
+            ):
+                raise DeltaError(
+                    "date-only values require a full cursor from recent/older"
+                )
+            selected = [
+                event for event in result.events if event.timestamp < cursor_time
+            ]
         return ReadResult(selected[:limit], result.warnings)
 
     def rebuild_context(self, limit: int = 5) -> str:
@@ -292,7 +302,10 @@ def build_parser() -> argparse.ArgumentParser:
     recent.add_argument("--limit", type=int, default=5)
 
     older = sub.add_parser("older")
-    older.add_argument("--before", required=True, help="ISO time or cursor from a previous read")
+    older.add_argument(
+        "--before", required=True,
+        help="full cursor from a previous read; ISO time only for fully timestamped histories",
+    )
     older.add_argument("--limit", type=int, default=5)
 
     append = sub.add_parser("append")

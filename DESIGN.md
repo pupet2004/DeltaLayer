@@ -292,6 +292,12 @@ v0 推荐：
 
 变化写入时间。
 
+`time` SHOULD use an offset-aware ISO 8601 timestamp whenever available.
+
+例如：`2026-09-21T21:43:12+08:00`，或带 `Z` 的 UTC 时间。使用实际写入时间，不臆造缺失的时刻或时区，也不为符合新指导而补写旧历史。date-only 会丢失同日时间精度；单文件追加顺序仍可保留先后，但不能替代跨来源排序。
+
+这是写入指导，不新增排序或并发机制。prototype 自动生成带 offset 的时间，同时兼容已有 date-only 记录而不补造时刻；单一 JSONL 按追加位置检索和分页。包含具体时刻的 timestamp 仍要求时区。
+
 ### `source`
 
 变化来源，例如：
@@ -617,8 +623,8 @@ Agent 应理解：
 例如：
 
 ```json
-{"time":"10:31","source":"codex-A","changes":["认证模块增加 token refresh"]}
-{"time":"10:32","source":"codex-B","changes":["数据库新增 migration 021"]}
+{"time":"2026-09-21T10:31:00+08:00","source":"codex-A","changes":["认证模块增加 token refresh"]}
+{"time":"2026-09-21T10:32:00+08:00","source":"codex-B","changes":["数据库新增 migration 021"]}
 ```
 
 DeltaLayer v0 不要求提前计算：
@@ -677,6 +683,10 @@ This project maintains an LLM-native semantic change history.
 Maintain a `changes[]` side channel.
 
 Whenever you determine that the project has undergone a durable semantic change, append a concise change record.
+
+`time` SHOULD use an offset-aware ISO 8601 timestamp whenever available.
+Use the actual recording time with an explicit UTC offset or `Z` when available.
+Do not invent missing time or timezone information or rewrite old history.
 
 Changes may include:
 - capabilities added or removed;

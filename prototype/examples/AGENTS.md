@@ -8,3 +8,7 @@ reader. Stop when you understand enough to work safely.
 
 Use source code and tests to verify the current implementation. Record only
 durable semantic changes. `changes: []` is valid when nothing durable changed.
+
+`time` SHOULD use an offset-aware ISO 8601 timestamp whenever available.
+Use the actual recording time with an explicit UTC offset or `Z` when available.
+Do not invent missing time or timezone information or rewrite old history.

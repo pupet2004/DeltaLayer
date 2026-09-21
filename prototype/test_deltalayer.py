@@ -1,7 +1,7 @@
 # SPDX-License-Identifier: Apache-2.0
 
 import json
-from datetime import datetime
+from datetime import date, datetime
 from pathlib import Path
 import subprocess
 import sys
@@ -86,6 +86,11 @@ class DeltaLayerTests(unittest.TestCase):
             self.store.recent(0)
         with self.assertRaises(DeltaError):
             self.store.older("2026-09-21T16:00:00", 5)
+        for cursor in ("2026-09-21#line=0", "2026-09-21#line=-1",
+                       "2026-09-21#line=x", "2026-02-30#line=1"):
+            with self.subTest(cursor=cursor):
+                with self.assertRaises(DeltaError):
+                    self.store.older(cursor)
         with self.assertRaises(DeltaError):
             self.store.append(["x"], source="")
 
@@ -100,6 +105,9 @@ class DeltaLayerTests(unittest.TestCase):
             ([], 42, None),
             ([], "test", ""),
             ([], "test", "2026-09-21T16:00:00"),
+            ([], "test", "2026-02-30"),
+            ([], "test", "2026-13-01"),
+            ([], "test", "2026-09"),
             ([], "test", "not a time"),
         ]:
             with self.subTest(changes=changes, source=source, timestamp=timestamp):
@@ -142,34 +150,136 @@ class DeltaLayerTests(unittest.TestCase):
         self.store.init()
         self.assertEqual(self.store.agents_path.read_bytes(), initialized)
 
-    def test_time_order_offsets_and_exclusive_time_boundary(self):
+    def test_append_order_offsets_and_exclusive_time_boundary(self):
         for stamp, change in [
-            ("2026-09-21T11:00:00+08:00", "newest"),
-            ("2026-09-21T00:00:00Z", "oldest"),
-            ("2026-09-21T10:00:00+08:00", "middle"),
+            ("2026-09-21T11:00:00+08:00", "first"),
+            ("2026-09-21T00:00:00Z", "second"),
+            ("2026-09-21T10:00:00+08:00", "third"),
         ]:
             self.store.append([change], source="test", timestamp=stamp)
         self.assertEqual(
             [e.value["changes"][0] for e in self.store.recent().events],
-            ["newest", "middle", "oldest"],
+            ["third", "second", "first"],
+        )
+        self.assertEqual(
+            [e.value["changes"][0] for e in self.store.older(
+                "2026-09-21T10:00:00+08:00#line=3"
+            ).events],
+            ["second", "first"],
         )
         self.assertEqual(
             [e.value["changes"][0] for e in self.store.older("2026-09-21T02:00:00Z").events],
-            ["oldest"],
+            ["second"],
+        )
+        self.assertEqual(
+            [e.value["changes"][0] for e in self.store.older("2026-09-22T00:00:00Z").events],
+            ["third", "second", "first"],
         )
 
-    def test_many_records_paginate_without_loss(self):
+    def test_date_only_event_retains_precision_and_bytes(self):
         self.store.init()
+        original = b'{"time": "2026-09-21", "source": "test", "changes": ["legacy"]}\r\n'
+        self.store.history_path.write_bytes(original)
+        result = self.store.recent()
+        self.assertEqual(result.warnings, [])
+        self.assertEqual(len(result.events), 1)
+        event = result.events[0]
+        self.assertEqual(event.value["time"], "2026-09-21")
+        self.assertIs(type(event.timestamp), date)
+        self.assertEqual(event.cursor, "2026-09-21#line=1")
+        self.assertEqual(self.store.history_path.read_bytes(), original)
+        appended = self.store.append(["second"], source="test", timestamp="2026-09-21")
+        self.assertEqual(appended["time"], "2026-09-21")
+        self.assertTrue(self.store.history_path.read_bytes().startswith(original))
+        self.assertEqual([e.line for e in self.store.recent().events], [2, 1])
+
+    def test_mixed_precision_recent_older_and_pagination(self):
+        stamps = [
+            "2026-09-21",
+            "2026-09-22T10:00:00+08:00",
+            "2026-09-21T00:00:00Z",
+            "2026-09-20",
+            "2026-09-21T01:00:00.123456-07:00",
+            "2026-09-21",
+            "2026-09-21",
+        ]
+        for index, stamp in enumerate(stamps):
+            self.store.append([str(index)], source="test", timestamp=stamp)
+        before = self.store.history_path.read_bytes()
+        for size in (1, 2, 3, 8):
+            with self.subTest(page_size=size):
+                seen = []
+                page = self.store.recent(size)
+                while page.events:
+                    self.assertEqual(page.warnings, [])
+                    seen.extend(page.events)
+                    for event in page.events:
+                        if type(event.timestamp) is date:
+                            self.assertEqual(
+                                event.cursor, f"{event.value['time']}#line={event.line}"
+                            )
+                    page = self.store.older(page.events[-1].cursor, size)
+                self.assertEqual(page.warnings, [])
+                self.assertEqual([e.line for e in seen], list(range(7, 0, -1)))
+                self.assertEqual([e.value["time"] for e in seen], list(reversed(stamps)))
+        self.assertEqual(self.store.history_path.read_bytes(), before)
+
+    def test_mixed_precision_pagination_across_invalid_and_blank_lines(self):
+        self.store.init()
+        original = b"\n".join([
+            b'{"time":"2026-09-21","source":"test","changes":["first"]}',
+            b"",
+            b"{bad json}",
+            b'{"time":"2026-09-22T00:00:00Z","source":"test","changes":["second"]}',
+            b'{"time":"2026-02-30","source":"test","changes":[]}',
+            b"\xff",
+            b'{"time":"2026-09-21","source":"test","changes":["third"]}',
+        ]) + b"\n"
+        self.store.history_path.write_bytes(original)
+        page = self.store.recent(1)
+        for line in (7, 4, 1):
+            self.assertEqual([e.line for e in page.events], [line])
+            self.assertEqual([warning["line"] for warning in page.warnings], [3, 5, 6])
+            page = self.store.older(page.events[-1].cursor, 1)
+        self.assertEqual(page.events, [])
+        self.assertEqual(self.store.history_path.read_bytes(), original)
+
+    def test_append_between_mixed_precision_pages_keeps_cursor_position(self):
+        for stamp in ("2026-09-21", "2026-09-22T00:00:00Z", "2026-09-21"):
+            self.store.append(["initial"], source="test", timestamp=stamp)
+        cursor = self.store.recent(1).events[-1].cursor
+        before = self.store.history_path.read_bytes()
+        self.store.append(["later append"], source="test", timestamp="2026-09-01")
+        self.assertEqual([e.line for e in self.store.recent().events], [4, 3, 2, 1])
+        self.assertEqual([e.line for e in self.store.older(cursor).events], [2, 1])
+        self.assertTrue(self.store.history_path.read_bytes().startswith(before))
+
+    def test_time_only_boundary_requires_full_cursor_for_date_precision(self):
+        self.store.append(["precise"], source="test", timestamp="2026-09-21T00:00:00Z")
+        self.store.append(["date only"], source="test", timestamp="2026-09-21")
+        for boundary in ("2026-09-21", "2026-09-22T00:00:00Z"):
+            with self.subTest(boundary=boundary):
+                with self.assertRaisesRegex(DeltaError, "full cursor"):
+                    self.store.older(boundary)
+        page = self.store.older(self.store.recent(1).events[-1].cursor)
+        self.assertEqual([e.line for e in page.events], [1])
+        self.assertEqual(page.warnings, [])
+
+    def test_many_mixed_precision_records_paginate_without_loss(self):
+        self.store.init()
+        stamps = ("2026-09-21", "2026-09-22T00:00:00Z", "2026-09-20",
+                  "2026-09-21T16:00:00+08:00")
         # A fixture avoids thousands of fsync calls; append durability is tested separately.
         with self.store.history_path.open("w", encoding="utf-8") as stream:
             for number in range(2500):
                 stream.write(json.dumps({
-                    "time": "2026-09-21T00:00:00Z", "source": "test",
+                    "time": stamps[number % len(stamps)], "source": "test",
                     "changes": [str(number)],
                 }) + "\n")
         seen = []
         page = self.store.recent(137)
         while page.events:
+            self.assertEqual(page.warnings, [])
             seen.extend(int(e.value["changes"][0]) for e in page.events)
             page = self.store.older(page.events[-1].cursor, 137)
         self.assertEqual(seen, list(reversed(range(2500))))
@@ -183,6 +293,65 @@ class DeltaLayerTests(unittest.TestCase):
         self.assertEqual(context["recent_changes"][0]["changes"], ["durable"])
         self.assertTrue(context["next_before"])
         self.assertEqual(self.store.project_path.read_bytes(), before)
+
+    def test_rebuild_context_preserves_date_only_time_and_cursor(self):
+        self.store.init()
+        self.store.append(["precise"], source="test", timestamp="2026-09-22T00:00:00Z")
+        self.store.append(["date only"], source="test", timestamp="2026-09-21")
+        history = self.store.history_path.read_bytes()
+        view = self.store.project_path.read_bytes()
+        context = json.loads(self.store.rebuild_context(1))
+        self.assertEqual(context["warnings"], [])
+        self.assertEqual(context["recent_changes"][0]["time"], "2026-09-21")
+        self.assertEqual(context["next_before"], "2026-09-21#line=2")
+        self.assertEqual(
+            [e.line for e in self.store.older(context["next_before"]).events], [1]
+        )
+        self.assertEqual(self.store.history_path.read_bytes(), history)
+        self.assertEqual(self.store.project_path.read_bytes(), view)
+
+    def test_cli_mixed_precision_pagination(self):
+        command = [sys.executable, str(Path(__file__).with_name("deltalayer.py")),
+                   "--root", str(self.root)]
+        result = subprocess.run(
+            command + ["append", "--source", "test", "--time", "2026-09-21",
+                       "--change", "date only"],
+            capture_output=True, text=True, encoding="utf-8",
+        )
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(json.loads(result.stdout)["time"], "2026-09-21")
+        self.store.append(["precise"], source="test", timestamp="2026-09-22T00:00:00Z")
+        self.store.append(["date only again"], source="test", timestamp="2026-09-21")
+        before = self.store.history_path.read_bytes()
+        result = subprocess.run(command + ["recent", "--limit", "2"],
+                                capture_output=True, text=True, encoding="utf-8")
+        self.assertEqual(result.returncode, 0, result.stderr)
+        page = json.loads(result.stdout)
+        self.assertEqual(page["warnings"], [])
+        self.assertEqual([e["_line"] for e in page["events"]], [3, 2])
+        self.assertEqual(page["events"][0]["_cursor"], "2026-09-21#line=3")
+        result = subprocess.run(
+            command + ["older", "--before", page["next_before"], "--limit", "2"],
+            capture_output=True, text=True, encoding="utf-8",
+        )
+        self.assertEqual(result.returncode, 0, result.stderr)
+        page = json.loads(result.stdout)
+        self.assertEqual(page["warnings"], [])
+        self.assertEqual([e["_line"] for e in page["events"]], [1])
+        self.assertEqual(page["next_before"], "2026-09-21#line=1")
+        result = subprocess.run(
+            command + ["older", "--before", page["next_before"]],
+            capture_output=True, text=True, encoding="utf-8",
+        )
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIsNone(json.loads(result.stdout)["next_before"])
+        result = subprocess.run(
+            command + ["older", "--before", "2026-09-22T00:00:00Z"],
+            capture_output=True, text=True, encoding="utf-8",
+        )
+        self.assertEqual(result.returncode, 2)
+        self.assertIn("full cursor", result.stderr)
+        self.assertEqual(self.store.history_path.read_bytes(), before)
 
     def test_cli_empty_changes_and_error_exit(self):
         command = [sys.executable, str(Path(__file__).with_name("deltalayer.py")),
