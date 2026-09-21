@@ -1,0 +1,43 @@
+{
+  "date": "2026-09-21",
+  "task": "Strengthen atomic provenance validation at a workspace append boundary.",
+  "groups": {
+    "A": {
+      "input": "source-only",
+      "delta_tasks": 0,
+      "focused_tests": "105 passed",
+      "regression_tests": "117 passed",
+      "baseline_atomic_tests": null,
+      "broad_tests": "496 passed, 232 failed, 20 skipped, 27 errors",
+      "status": "completed"
+    },
+    "B": {
+      "input": "existing project summary then source",
+      "delta_tasks": 0,
+      "focused_tests": "92 passed",
+      "regression_tests": "179 passed",
+      "baseline_atomic_tests": null,
+      "broad_tests": "473 passed, 257 failed, 21 skipped, 27 errors",
+      "status": "completed"
+    },
+    "C": {
+      "input": "recent semantic changes then source",
+      "delta_tasks": 3,
+      "focused_tests": "255 passed",
+      "regression_tests": null,
+      "baseline_atomic_tests": "106 passed",
+      "broad_tests": "585 passed, 256 failed, 21 skipped, 27 errors",
+      "status": "completed"
+    }
+  },
+  "observations": [
+    "All groups changed the same implementation boundary and added focused tests.",
+    "All groups preserved no-partial-commit behavior in focused tests.",
+    "No group introduced a planner, vector store, new database, or new framework."
+  ],
+  "limitations": [
+    "The task named the implementation boundary, so it was a weak test of long-range continuity.",
+    "Focused test counts are not directly comparable.",
+    "Broad failures came from incomplete cropped environments, not a clean product regression measure."
+  ]
+}

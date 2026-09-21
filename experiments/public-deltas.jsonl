@@ -1,0 +1,48 @@
+{"id":"delta-001","time":"2026-09-14T08:56:25.545Z","source":"agent","changes":["V2 技术方向确定为 Fork an external framework 加source document领域层，an earlier framework 不再用于 V2。"]}
+{"id":"delta-002","time":"2026-09-14T09:24:12.626Z","source":"agent","changes":["V0.1 归档，V2 迁到独立 the project 工作区。","新增独立 the deterministic data layer：an embedded database 三大报表、指标与entity别名、周期规则和三个审核查询视图。"]}
+{"id":"delta-003","time":"2026-09-14T11:11:07.367Z","source":"agent","changes":["entity实体解析改为数据库驱动的确定性 alias resolver，支持最长匹配、security代码和歧义状态。","Grounding 实验出现答案回归，实体识别正确不保证 SQL 正确。"]}
+{"id":"delta-004","time":"2026-09-14T13:54:36.296Z","source":"agent","changes":["重复对照仅支持 Period Contract 的稳定收益，尚无证据需要 the planning layer；主要缺口是时间锚点与输出契约。"]}
+{"id":"delta-005","time":"2026-09-14T14:52:24.063Z","source":"agent","changes":["评价已区分 SQL 形状正确、检索充分和最终答案正确；旧严格 SQL 评分存在假阴性。","下一阶段方向改为 Evidence 与答案来源，而非 Planner 或 SQL Reviewer。"]}
+{"id":"delta-006","time":"2026-09-14T15:56:12.559Z","source":"agent","changes":["受控实验不支持 Public Query Surface Hardening 带来稳定检索收益；历史 entity_id 错误未在本轮基线重现。"]}
+{"id":"delta-007","time":"2026-09-15T03:08:27.273Z","source":"agent","changes":["新增 Evidence provenance 与重放；直接和派生指标可绑定支持证据，拒答的数据不存在证据仍有缺口。"]}
+{"id":"delta-008","time":"2026-09-15T04:42:14.878Z","source":"agent","changes":["导入茅台、五粮液 2021–2025 真实年报数据；缺失字段保持 MISSING，与合成数据隔离。"]}
+{"id":"delta-009","time":"2026-09-15T13:12:40.222Z","source":"agent","changes":["an earlier phase 形成离线本地产品：配置、entity库、收藏、不可变历史快照与备份恢复。","密钥使用 the OS credential store，无明文回退；问数限三个公开视图，快照可无密钥查看并导出。"]}
+{"id":"delta-010","time":"2026-09-15T16:08:00.261Z","source":"agent","changes":["支持 JSON/CSV/XLSX 自助导入、映射预览、冲突检测和 Import Jobs。","用户确认数据标为 USER_CONFIRMED，不自动成为 VERIFIED。"]}
+{"id":"delta-011","time":"2026-09-15T16:39:06.234Z","source":"agent","changes":["entity、年份、报告摘要统一读取 QueryScope；切换范围清除旧结果并阻止迟到响应覆盖。"]}
+{"id":"delta-012","time":"2026-09-16T02:19:15.247Z","source":"agent","changes":["PDF bake-off 发现高字段召回掩盖低数值准确率，尚不能产品化；后续改为表区域、年度列与数值 bbox 确定性抽取。"]}
+{"id":"delta-013","time":"2026-09-16T06:29:12.618Z","source":"agent","changes":["冻结 PDF an earlier phase 在美的盲测因未覆盖“合并及entity”标题族而失败，开发集精度不能代表外部覆盖。"]}
+{"id":"delta-014","time":"2026-09-16T07:48:40.694Z","source":"agent","changes":["PDF an earlier phase 覆盖“合并及entity”标题族并修正格力真值单位；达到 Text PDF Beta 候选门槛。"]}
+{"id":"delta-015","time":"2026-09-16T08:58:59.117Z","source":"agent","changes":["Text PDF Import Beta 已接入 ImportJob → Review → USER_CONFIRMED → the deterministic data layer，复用冻结 an earlier phase extractor。","扫描件、非年度报告及损坏 PDF 入库前拒绝；Review 支持页码来源与 bbox 高亮。"]}
+{"id":"delta-016","time":"2026-09-16T09:49:39.869Z","source":"agent","changes":["PDF 原件统一保存为 imports/<content-hash>.document，正式解析器脱离 benchmark 目录依赖；迁移、备份恢复与高亮已修复。"]}
+{"id":"delta-017","time":"2026-09-16T10:20:22.284Z","source":"agent","changes":["新增九个确定性structured-data分析工具及统一 Analysis Report，携带 revision、facts、signals 与 Evidence；新增分析 API 和页面。"]}
+{"id":"delta-018","time":"2026-09-16T12:46:56.446Z","source":"agent","changes":["新增独立 Fact/Evidence Resolver、Operation Kernel 和篡改检测；Analysis History 持久化验证快照。","compound analysis、entity_comparison、anomaly_analysis 的部分复合计算暂不可验证。"]}
+{"id":"delta-019","time":"2026-09-16T14:07:54.398Z","source":"agent","changes":["entity_comparison 已支持 FULLY_VERIFIED，旧跨entity不可验证限制被解除；compound analysis 与 anomaly_analysis 仍保留 PARTIAL。","an earlier phase 已有多轮分析计划与 Explainer，真实 Planner smoke 因供应商错误未通过。"]}
+{"id":"delta-020","time":"2026-09-16T16:07:20.497Z","source":"agent","changes":["MODIFY_PLAN 改用确定性 PlanPatch 合并，不再重新生成整个计划；区分“只看”与“重点看”。","修改生成关联父计划的新版本并保持 AWAITING_APPROVAL，不自动执行。"]}
+{"id":"delta-021","time":"2026-09-16T17:14:30.280Z","source":"agent","changes":["新增持久化 WorkflowSession、append-only 事件、计划版本与 Tabs；关闭 Tab 不等于取消工作流。","History 只重放快照，不调用模型、工具或重新验证；Rerun 建子工作流，旧历史不变。"]}
+{"id":"delta-022","time":"2026-09-17T05:01:29.590Z","source":"agent","changes":["新增本地年报 Research：an embedded database FTS5、页码章节 provenance、不可变研究快照与structured-data事实绑定。","研究保留 DIRECT/RELATED/NO_SUPPORT_FOUND，回放不重检索，错误因果声明被拒绝。"]}
+{"id":"delta-023","time":"2026-09-17T09:32:55.462Z","source":"agent","changes":["hydrateAnalysisReport() 合并分开持久化的 report 与 verification，修复 History 重开/刷新后验证状态变 UNKNOWN。","仅恢复真实验证快照，不用 COMPLETED 推断已验证，也不重新验证。"]}
+{"id":"delta-024","time":"2026-09-18T07:54:00.913Z","source":"agent","changes":["混合工具报告顶层 scope 改为完整 workflow scope，各工具保留自身范围，修复跨entity比较被误判 SOURCE_FACT_MISMATCH。","该 RC 仍被 legacy 页面生产构建错误阻断。"]}
+{"id":"delta-025","time":"2026-09-18T12:51:08.378Z","source":"agent","changes":["组件采用文档选定 the chart renderer、a document library、Trafilatura；browser automation PDF 和 web providers 检索须先做 PoC，尚未实现。"]}
+{"id":"delta-026","time":"2026-09-18T13:04:42.433Z","source":"agent","changes":["新增持久化 Report Planning artifact：信息需求、能力解析、Research Need 与报告章节。","销量/价格缺口不允许用营业收入替代，单entity与比较 scope 分离。"]}
+{"id":"delta-027","time":"2026-09-18T14:36:02.186Z","source":"agent","changes":["新增自有 ChartSpec、确定性 the deterministic data layer 绑定及 the chart renderer 图表；不支持的 Waterfall 不伪造数据。","图表与注释保存到快照，History 不重新生成。"]}
+{"id":"delta-028","time":"2026-09-18T15:43:47.814Z","source":"agent","changes":["新增 renderer-agnostic Dynamic Report Model、Claim grounding、Chart/Research 引用及 Web 报告；schema 9 支持报告快照备份恢复。"]}
+{"id":"delta-029","time":"2026-09-18T20:25:47.779Z","source":"agent","changes":["新增 web providers 适配、安全 Fetch、网页提取及 ResearchEvidence 归一化，外部资料保存不可变快照且不进入 the deterministic data layer。","真实 provider smoke 因缺少凭据未运行，the provider smoke case 当时尚不 READY。"]}
+{"id":"delta-030","time":"2026-09-19T07:59:32.852Z","source":"agent","changes":["正式 the project 构建隔离 legacy an external framework 页面与上下文；structured-data图表改 the chart renderer，移除 legacy G2 adapter 运行依赖。","严格 TypeScript 与生产构建已打通；真实检索凭据仍缺失。"]}
+{"id":"delta-031","time":"2026-09-19T09:35:02.925Z","source":"agent","changes":["新增有界 Research Planner、Source Policy、隐私清洗与 first-party-first 研究流程；真实网络编排仍未验证。"]}
+{"id":"delta-032","time":"2026-09-19T10:29:53.895Z","source":"agent","changes":["新增多源 Claim 归一化、范围关系和保留冲突的综合；Research 与 the deterministic data layer 真值隔离。","多源结果接入 Report 与快照；真实多源网络 smoke 仍未运行。"]}
+{"id":"delta-033","time":"2026-09-19T11:19:23.462Z","source":"agent","changes":["31 题产品评估确认预测/投资拒答、多entity澄清、技术化提示和简单问题流程过重等缺口，结果为 13 PASS/11 PARTIAL/7 FAIL。"]}
+{"id":"delta-034","time":"2026-09-19T11:53:49.983Z","source":"agent","changes":["修复预测投资边界、部分履约、多entity澄清与 Plan scope，31 题仍有 4 FAIL，3 项改为预期不支持。"]}
+{"id":"delta-035","time":"2026-09-19T13:06:37.772Z","source":"agent","changes":["新增 FACT/BRIEF/ANALYSIS/RESEARCH_REPORT 自适应回答深度；单年 FACT 使用零模型快路径，不建报告图表。","研究不足保留已确认事实并提供用户可读限制；31 题降至零 FAIL，但 12 PARTIAL。"]}
+{"id":"delta-036","time":"2026-09-19T14:09:43.323Z","source":"agent","changes":["测试与离线服务按当前仓库发现 packages/*/src，修复跨工作区依赖错误；此前 16 个失败确认为环境可移植性问题。"]}
+{"id":"delta-037","time":"2026-09-19T15:29:12.145Z","source":"agent","changes":["Word Import Lite 已支持 DOCX 段落、表格、合并单元格及structured-data字段映射；确认数据带 provenance，以 USER_CONFIRMED 入库。","文档可作为 research-only 或混合structured-data资料，Word → the deterministic data layer → FACT 链路已接通。"]}
+{"id":"delta-038","time":"2026-09-20T03:13:07.450Z","source":"agent","changes":["工作台转为 report-first，移除独立综合解释，Web/PDF/DOCX 共用 Report Model；Evidence 默认折叠，Timeline 下沉。","可靠期间覆盖元数据与价格/销量资料仍缺失；修复查询接续、净利润指标传递和无关 Research 回填。"]}
+{"id":"delta-039","time":"2026-09-20T06:47:43.028Z","source":"agent","changes":["Unified Analysis Contract 修复否定语句误判 FACT、深度分析绕过审批与指标范围漂移；新增确定性差距和方向/指标绑定校验。"]}
+{"id":"delta-040","time":"2026-09-20T12:15:24.794Z","source":"agent","changes":["the current validation phase 已实现 AI Claims、独立验证、有限纠错与报告绑定并完成离线认证；真实模型和完整浏览器/导出认证尚未完成，READY 为 NO。"]}
+{"id":"delta-041","time":"2026-09-20T13:19:30.221Z","source":"agent","changes":["新版前端移除技术详情、原始 JSON 与技术时间线，后台审计记录保留。"]}
+{"id":"delta-042","time":"2026-09-20T14:09:47.721Z","source":"agent","changes":["生产审计确认四案均在 Provider 失败而非 Claim 被拒绝；Chart 自动分析文字和 USER_QUESTION 可绕过 Claim 绑定。","source catalog 的年度标记未传入 Analysis Fact/Chart 覆盖元数据，Objective 仍为 UNKNOWN。"]}
+{"id":"delta-043","time":"2026-09-20T14:42:43.772Z","source":"agent","changes":["修复 Provider 消息格式并增加脱敏诊断；分析失败可准确识别为 PROVIDER_AUTH_ERROR。","健康检查 OK 不代表分析凭据有效；实际分析仍 response_received=false。"]}
+{"id":"delta-044","time":"2026-09-20T15:43:36.137Z","source":"agent","changes":["ANALYSIS/RESEARCH_REPORT Chart 不再自动生成趋势或差距文字；分析语义须来自 Verified Claim。","报告分开 fact_verification_status、analysis_verification_status 与 evidence_status，区分供应商失败与无已验证 Claim。"]}
+{"id":"delta-045","time":"2026-09-20T16:40:10.971Z","source":"agent","changes":["Planner/Capability Resolver 降为工具目录、参数和范围校验及 provenance，不再拥有分析判断权。","the deterministic data layer 拒绝超批准entity/期间；采集记录调用 ID、请求者、原因、时间和 revision，并保持 History 确定性。"]}
+{"id":"delta-046","time":"2026-09-21T01:41:16.317Z","source":"agent","changes":["the current validation phase Phase 3 已接通 the model provider Tool Request → Gateway → Evidence Workspace → Claims；分析/研究报告首轮 Workspace 为空，取消旧预取。","工具结果重新构造并独立验证后进入 Claim Pipeline；History 不重跑 Tool Loop，未进入 a later phase。"]}
+{"id":"delta-047","time":"2026-09-21T02:14:46.572Z","source":"agent","changes":["the current validation phase Phase 4 已收口：Report 只接收已验证 Claim，无 Claim 仅展示核对事实；FACT、Claim 与限制语句均校验绑定。","Chart/Report/Export 只渲染，DOCX validate_render_bundle() 拒绝未绑定图表洞察；未启动 a later phase。"]}
+{"id":"delta-048","time":"2026-09-21T02:57:00.339Z","source":"agent","changes":[]}

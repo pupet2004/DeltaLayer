@@ -1,0 +1,78 @@
+# Experiments And Evidence Boundaries
+
+Date: 2026-09-21. Current H5 status: **`PARTIALLY_SUPPORTED`**.
+
+This repository publishes a deliberately limited evidence subset. It does not publish the original session transcripts, source checkout, raw session ids, real fixtures, credentials, or business data.
+
+## Public Materials
+
+- [`public-deltas.jsonl`](experiments/public-deltas.jsonl): 48 anonymized, semantically redacted records.
+- [`public-corpus-metrics.json`](experiments/public-corpus-metrics.json): public corpus metrics and separately labeled source-corpus measurements.
+- [`public-provenance.json`](experiments/public-provenance.json): anonymous ids, timestamps, source labels and hashes of public records.
+- [`phase4-summary.json`](experiments/phase4-summary.json): curated continuation summary.
+- [`h5-summary.json`](experiments/h5-summary.json): curated open-ended continuation summary.
+
+The public corpus is a derivative. Product names, framework names, paths, raw task ids and domain-specific names have been generalized. Its byte count therefore cannot reproduce the original corpus byte-for-byte.
+
+## What Was Measured
+
+The private source experiment selected 48 real, successful development tasks and reconstructed one semantic delta per task after the fact. This was not online automatic writing, not a random sample and not a complete session export.
+
+The source-corpus measurements were:
+
+| Material | Characters |
+| --- | ---: |
+| Concatenated final task messages | 40,555 |
+| Compact Delta JSON with metadata | 10,398 |
+| Change strings only | 4,585 |
+| Exact tokens | `null`, not measured |
+
+The public derivative currently contains 48 records, 9,214 JSONL characters and 13,132 UTF-8 bytes. Its own measurements are in `public-corpus-metrics.json`.
+
+The 4,585-character figure is approximately 11.3% of the source final-message characters. It is not a complete session compression ratio and is not a claim about total token savings. The source history also contained repeated transport/context text, which was deliberately excluded from promotional ratios.
+
+The reconstruction was author-assisted and therefore has hindsight bias: knowing what later mattered may make it easier to write a concise change than it would have been online.
+
+## Continuation Runs
+
+### Phase 4
+
+Three agents continued the same bounded atomic-provenance task under three inputs:
+
+- source-only;
+- an existing project summary followed by source inspection;
+- recent semantic changes followed by source inspection.
+
+All three completed the focused task and added tests. The task named its implementation boundary, so it was a weak test of long-range continuity. Focused test counts were not directly comparable, and broad suite results were limited by incomplete fixtures and dependencies. See [`phase4-summary.json`](experiments/phase4-summary.json).
+
+### H5
+
+H5 asked agents to identify and implement a real, moderate next task within an existing tool/runtime project without naming the file or function. The three groups converged on strict argument-contract validation at a native tool boundary.
+
+The recorded project-map timing lower bounds were approximately 104 seconds for source-only, 89 seconds for the summary condition, and 103 seconds for the Delta condition. These are incomplete checkpoint measurements, not precise end-to-end timings and not a speed ranking.
+
+The Delta condition read eight task records: three recent records and five older records. It then needed current source and Git metadata. The newer runtime direction was not fully covered by the historical Delta input.
+
+Observed:
+
+- no user re-explanation was needed;
+- no group reintroduced the deprecated direction;
+- all groups completed focused implementation and tests;
+- no reliable reduction in total source archaeology was measured;
+- no token savings were measured.
+
+Therefore:
+
+> **H5 = `PARTIALLY_SUPPORTED`**
+
+The evidence supports Delta as a low-cost project-map entry point. It does not establish a significant reduction in total continuation cost, source-code archaeology or tokens, and it does not show superiority over a high-quality handoff.
+
+## Failures We Keep
+
+An earlier understanding run showed that a model could read “not started” as “next step”. This is a real semantic failure, not a detail to hide. It motivates explicit negative language such as “not authorized”, “not started” and “unknown”.
+
+The first Phase 4 attempt did not produce a verifiable completion and is not counted as success. The later rerun did. Retaining that distinction is part of the evidence boundary.
+
+## Next Falsification Step
+
+The next experiment should use a complete, identical test environment; generate changes online; compare source-only, high-quality handoff, Delta-only and Delta plus current view; use tasks spanning at least two architectural transitions; and record writing, reading, source inspection, rework, correctness and total cost. Unmeasured values should remain `null`.

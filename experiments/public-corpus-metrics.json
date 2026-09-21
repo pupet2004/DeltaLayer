@@ -1,0 +1,14 @@
+{
+  "task_count": 48,
+  "public_jsonl_chars": 9214,
+  "public_jsonl_utf8_bytes": 13132,
+  "public_changes_chars": 5129,
+  "public_corpus_sha256": "aa3e117b2895e044cc82beff8548a8a1afd81a96c8499785afc2ff9796a46f88",
+  "source_corpus_metrics": {
+    "final_messages_chars": 40555,
+    "delta_json_chars": 10398,
+    "delta_changes_chars": 4585,
+    "exact_tokens": null
+  },
+  "redaction": "Anonymous ids, generic source label, product/framework names, paths, and domain-specific names were generalized."
+}

@@ -1,0 +1,49 @@
+{
+  "date": "2026-09-21",
+  "hypothesis": "Task-local semantic changes can materially reduce open-ended continuation cost.",
+  "h5_status": "PARTIALLY_SUPPORTED",
+  "task": "Open-ended continuation within an existing agent tool/runtime project.",
+  "chosen_gap": "Strict argument-contract validation at a native tool boundary.",
+  "groups": {
+    "A": {
+      "input": "source-only",
+      "delta_tasks": 0,
+      "map_seconds_lower_bound": 104,
+      "focused_tests": "134 passed",
+      "common_suite": "473 passed, 256 failed, 21 skipped, 27 errors",
+      "status": "completed"
+    },
+    "B": {
+      "input": "existing project summary then source",
+      "delta_tasks": 0,
+      "map_seconds_lower_bound": 89,
+      "focused_tests": "253 new tests; 309 focused boundary tests",
+      "common_suite": "634 passed, 260 failed, 21 skipped, 28 errors",
+      "status": "completed"
+    },
+    "C": {
+      "input": "recent semantic changes then source",
+      "delta_tasks": 8,
+      "map_seconds_lower_bound": 103,
+      "focused_tests": "56 argument-contract tests; 13 existing authority tests",
+      "common_suite": "436 passed, 260 failed, 21 skipped, 28 errors",
+      "status": "completed"
+    }
+  },
+  "observations": {
+    "same_gap_convergence": true,
+    "deprecated_direction_reintroduced": false,
+    "delta_induced_false_prior": false,
+    "user_reexplanation_needed": false,
+    "source_archaeology_reduction_proven": false,
+    "token_savings_proven": false,
+    "patch_quality_equivalent_at_focused_boundary": true
+  },
+  "limitations": [
+    "The open task allowed any reasonable current gap and had no single gold patch.",
+    "The chosen gap was local and visible in the current source.",
+    "The delta corpus did not cover the newest runtime direction; source verification remained necessary.",
+    "Broad suite results were limited by missing fixtures and dependencies.",
+    "Exact total context tokens and total source-reading cost were not instrumented."
+  ]
+}
