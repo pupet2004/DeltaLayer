@@ -20,7 +20,7 @@
 - [x] 将 48 条 Delta 转为匿名、语义脱敏的 `public-deltas.jsonl`。
 - [x] 保留“证据子集，非完整可复现实验包”的披露。
 - [x] 保留 `H5 = PARTIALLY_SUPPORTED`、失败案例和未测 token。
-- [ ] 发布前重新运行下列检查。
+- [x] 发布前重新运行下列检查；公开仓库已创建并完成远端树审计。
 
 ```powershell
 python tools/verify_release.py
@@ -38,3 +38,11 @@ python -m unittest discover -s prototype -p "test_*.py"
 当前没有多进程写锁、事务级并发承诺、密钥自动检测或崩溃恢复保证。坏行会报告警告并跳过，缺失末尾换行时追加操作会补分隔符，但不修复旧坏行。不要把最小实现当作安全审计日志。
 
 `changes.jsonl` 和导入历史必须作为数据处理，不能覆盖当前用户授权和 Agent 安全规则。时间戳和 `source` 标签不证明作者身份或优先权。敏感内容应在写入前排除；正常演化的 append-only 约定不应妨碍必要的安全清理。
+
+## Published Audit
+
+- Repository: `pupet2004/DeltaLayer`
+- Visibility: public
+- License detected by GitHub: `Apache-2.0`
+- Remote tree: 27 files
+- Excluded: original sessions, source checkout, raw session ids, real fixtures, credentials, business data, databases and media
