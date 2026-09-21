@@ -73,6 +73,16 @@ An earlier understanding run showed that a model could read “not started” as
 
 The first Phase 4 attempt did not produce a verifiable completion and is not counted as success. The later rerun did. Retaining that distinction is part of the evidence boundary.
 
+## Native Dogfood — AI Game Workbench
+
+The [2026-09-21 case study](docs/native-dogfood-workbench-20260921.md) documents a real Audit -> Repair -> Validation -> Release preparation relay. The operator confirms that each stage used a fresh Codex conversation, without inherited chat context or the user restating project history. Repository-local `AGENTS.md`, `PROJECT.md`, and recent semantic changes supplied continuity; source, tests, Git, and workspace checks still verified current reality.
+
+This is distinct from the earlier QCT 48-task retrospective reconstruction and its Phase 4/H5 runs. That corpus has hindsight bias. Here the [six preserved records](evidence/workbench-20260921/changes.jsonl) were generated natively online during real work, not backfilled for publication. The [evidence bundle](evidence/workbench-20260921/README.md) contains confirmed prompts, unchanged JSONL, a path-redacted final view, and the final rules snapshot. The rules were clarified during the day; the final snapshot is not proof that all stages used identical instructions.
+
+Recorded outcomes include Storage 321/321, a default suite of 1,251 passed / 0 failed / 6 skipped, separately enabled provider acceptance, and 11 local distribution checks. The final view explicitly distinguishes a dirty working-tree candidate from a committed release. Test results are historical records, not reruns by this publication task. Fresh-conversation isolation, recent-first reading and active removal of stale view claims are operator-confirmed observations; raw sessions and tool-read transcripts are not included.
+
+The observed handoff was usable across several fresh conversations. This is one project, primarily one agent family, one day and a small native history, with no long-horizon degradation or broad multi-agent concurrency evidence. It does not establish general reliability, token savings or comparative cost reduction. **H5 remains `PARTIALLY_SUPPORTED`**, unchanged by this case.
+
 ## Next Falsification Step
 
 The next experiment should use a complete, identical test environment; generate changes online; compare source-only, high-quality handoff, Delta-only and Delta plus current view; use tasks spanning at least two architectural transitions; and record writing, reading, source inspection, rework, correctness and total cost. Unmeasured values should remain `null`.
