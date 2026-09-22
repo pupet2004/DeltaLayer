@@ -1,4 +1,4 @@
-# DeltaLayer v0.2 Conversation Delta 设计规范
+# DeltaLayer v0.2.1 Conversation Delta 设计规范
 
 ## 1. 定位
 
@@ -6,19 +6,24 @@ DeltaLayer 是一个面向长期 LLM / Agent 工作的轻量项目连续层。
 
 它不保存完整对话，也不构建复杂的长期记忆系统。它保存的是：
 
-> **项目在一次真实 Agent conversation 中产生的净持久语义变化。**
+> **一个由单个 conversation 所拥有的项目语义变化记录。**
 
 核心思想仍然是：
 
-> **Persist change, not context. Let the next model reconstruct the rest.**
+> **Persist change ownership, not context. Let the next model reconstruct the rest.**
 
 ### 版本边界
 
 此前的 v0 dogfood 使用一个共享的 append-only `.deltalayer/changes.jsonl`，每个 durable event 追加一行。
 
-v0.2 将 append-only 的边界提升到 conversation level：
+v0.2 将 append-only 的边界提升到 conversation level。v0.2.1
+进一步收紧核心定义：
 
-> **A conversation owns one Delta file. The file may change during that conversation and freezes at handoff.**
+> **A Conversation Delta is a semantic change record owned by one conversation.**
+
+一个 conversation 在其 lifetime 内恰好拥有一个 Delta。它可以修订自己的
+净变化；另一个 conversation 不得因为发现某个文件而接管它。Delta 何时
+不再被当前 conversation 使用，是外部事实，不是 Delta 自己的存储状态。
 
 旧的 `changes.jsonl` 仍然是 legacy history，只读兼容，不迁移、不重写。Workbench Case 1 和 Qicetai Case 2 记录的是此前 shared-JSONL 模型的真实使用，不能伪装成当时已经使用 Conversation Delta 文件。
 
@@ -32,7 +37,7 @@ project/
     ├── changes.jsonl              # legacy v0 history, read-only
     └── changes/
         ├── <conversation-delta>.json
-        └── <conversation-delta>.frozen.json
+        └── <conversation-delta>.frozen.json  # optional archival name
 ```
 
 语义分别是：
@@ -42,7 +47,7 @@ PROJECT.md
 = rebuildable current project view
 
 .deltalayer/changes/*.json
-= Conversation Delta history
+= owned and historical Conversation Delta records
 
 .deltalayer/changes.jsonl
 = previous v0 history; read-only compatibility
@@ -51,16 +56,18 @@ source / tests / Git / workspace
 = authoritative present reality
 ```
 
-`.frozen.json` 仍是 Conversation Delta 文件，文件名只表达生命周期边界，不是新增的 schema status machine。
+`.frozen.json` 是当前 prototype 保留的可选归档文件名。它不是 Delta
+schema 的 status，也不是 v0.2.1 所要求的生命周期转换。已有
+`.frozen.json` 文件继续作为历史读取；新的 handoff 不必须执行 rename。
 
 ## 3. Conversation Delta 定义
 
-> **A Conversation Delta is the durable semantic difference between the project state at the beginning of a conversation and the project state at handoff.**
+> **A Conversation Delta is a semantic change record owned by one conversation.**
 
 这里的 conversation 是一次真实 Agent/chat conversation，不是开发任务：
 
-- 同一个对话中完成多个任务，仍然只属于同一个 Delta；
-- 用户没有新开对话，就继续维护同一个 active Delta；
+- 一个 conversation 在其 lifetime 内恰好拥有一个 Delta；
+- 同一个对话中完成多个任务，仍然只维护这个 Delta；
 - 用户新开对话，就创建新的 Delta；
 - 一个对话没有 durable semantic change，也仍然保存自己的空 Delta。
 
@@ -96,38 +103,45 @@ Conversation Delta 不是：
 - `updated_at`：该 Delta 最近一次维护时间；
 - `source`：例如 `codex`、`claude`、`human`、`ci-agent`；
 - `conversation_id`：运行环境天然提供时可写入；不要求人为制造全局 ID；
-- `changes`：一组从 conversation start 到当前 handoff 的净持久语义变化。
+- `changes`：一组从 conversation start 到当前的净持久语义变化。
 
 不添加 `status`、`superseded_by`、`priority`、reducer metadata、sequence id、Lamport clock 或数据库字段。
 
-## 5. Active Delta 与 frozen Delta
-
-Conversation 期间：
-
-- 一个 conversation 只维护自己的 active Delta；
-- `changes[]` 表达从 conversation 开始到当前的净差异；
-- 可以添加、改写或删除当前 conversation 自己的 change item；
-- 同一 conversation 内完全撤销且不再有长期意义的中间变化，可以从当前 Delta 删除；
-- 不要求保留 debugging path。
-
-Conversation 结束或 handoff 完成时：
-
-- active 文件 freeze；
-- 后续 conversation 不得修改该文件；
-- 新事实只能进入新的 active Delta；
-- frozen 文件内容和字节保持不变。
-
-因此，v0.2 的 append-only 对象不是每个中间 event，而是已经 frozen 的 conversation file history。active 文件可以在自己的 conversation 中原子覆盖；frozen 文件永远不更新。
+## 5. Ownership 与 handoff
 
 ### Conversation ownership
 
-> **Conversation ownership comes from the current conversation's own remembered Delta path, never from discovering an existing active file.**
+> **A conversation owns exactly one Delta during its lifetime.**
 
-新 conversation 永远 `start` 新文件，并在本对话上下文中记住返回的路径。同一 conversation 内后续任务只更新这个记住的路径；不能通过扫描目录、查找最新 active 文件或全局 `.current` 指针推断归属。不依赖产品提供真实 conversation ID。
+当前 conversation 可以：
 
-旧的未 frozen `.json` 可能来自异常中断、关闭窗口、崩溃或遗漏 freeze。它是 unfinished / active-at-last-write history，仍可读取已有 durable changes，但新 conversation 不得接管、更新或代为 freeze。`.frozen.json` 表示 completed handoff，不增加 `abandoned` 等状态字段。
+- update 自己的 Delta；
+- rewrite 自己的 `changes[]`；
+- remove 已被同一 conversation 撤销或取代的 change item。
 
-`freeze` 保持显式调用，不增加 lifecycle manager 或 hook。普通任务回复不等于 conversation 结束：同一对话继续多个任务时保持同一个 active Delta，在最终 conversation handoff 时才 freeze。原型不能识别产品层的结束时点；这仍需真实 dogfood 验证，不宣称已经自动解决 lifecycle。
+另一个 conversation 不能因为发现一个旧文件而接管它。ownership 来自当前
+conversation 自己记住的 Delta path，不来自目录发现、最新时间或全局指针。
+
+`owned -> historical` 是对使用关系的描述，不是写入 Delta 的状态机：
+
+- Delta 不需要 `status: active`；
+- conversation 仍在使用自己记住的 path 时，它就是自己的 Delta；
+- conversation 不再使用它之后，该文件自然成为历史记录；
+- 新 conversation 永远创建自己的 Delta。
+
+### Handoff
+
+Handoff 是给未来 Agent 的交接提示，不是 Delta 生命周期事件。当前对话交还
+控制权前应：
+
+1. 更新自己 Delta 的最终净变化；
+2. 必要时告诉用户下一任 Agent 应先读取这个 Delta；
+3. 不要求 `freeze()`，也不把普通任务回复等同于 handoff。
+
+当前 prototype 仍可通过 `freeze` 将文件改名为 `.frozen.json`，作为显式
+归档操作；这不是 v0.2.1 协议的必需步骤。旧的未归档 `.json` 可能来自
+异常中断、关闭窗口、崩溃或仍被原 conversation 使用。它仍可读取已有
+durable changes，但新 conversation 不得接管或更新它。
 
 ## 6. 空 Conversation Delta
 
@@ -146,7 +160,10 @@ Conversation 结束或 handoff 完成时：
 
 > **This conversation existed but produced no durable semantic project change.**
 
-读取 continuity 时可以跳过它的 semantic content，但不得删除文件。原型的 `recent` 会保留它作为历史项；`rebuild-context` 将它放入 `empty_conversations`，不把空数组当成语义变化。
+空 Delta 用于记录 conversation existence boundary，而不是保存语义内容。
+读取 continuity 时可以跳过它的 semantic content，但不得删除文件。原型的
+`recent` 会保留它作为历史项；`rebuild-context` 将它放入
+`empty_conversations`，不把空数组当成语义变化。
 
 ## 7. Change Writing Discipline
 
@@ -189,7 +206,7 @@ A Conversation Delta should be much smaller than the conversation that produced 
 4. 仍不足时，继续读取 legacy `.deltalayer/changes.jsonl`；
 5. Agent 判断已经足够后停止回溯；
 6. 用 source、tests、Git 和 workspace 核验当前现实；
-7. 新 conversation 永远创建新 Delta，将路径记在当前对话中；后续任务复用该路径，绝不接管发现的旧 active 文件。
+7. 新 conversation 永远创建自己的 Delta，将路径记在当前对话中；后续任务复用该路径，绝不接管发现的旧文件。
 
 不因为目录里有 1,000 个 Delta 就全部读取。历史可以无限增长，context read depth 仍由模型判断并保持有界。空 Delta 可以快速跳过 semantic content，但文件仍然存在于历史。
 
@@ -212,8 +229,8 @@ Conversation cursor 使用文件名；legacy cursor 继续兼容旧的 time/line
 不同 conversation 各自拥有文件：
 
 ```text
-Agent A -> A's active/frozen Conversation Delta
-Agent B -> B's active/frozen Conversation Delta
+Agent A -> A's owned/historical Conversation Delta
+Agent B -> B's owned/historical Conversation Delta
 ```
 
 它们不需要争用同一个 `changes.jsonl` writer。v0.2 不设计 merge engine、authority resolver 或并发治理系统。若后续真实 dogfood 暴露复杂并行冲突，再单独处理。
@@ -226,10 +243,10 @@ Agent B -> B's active/frozen Conversation Delta
 
 - revise/remove stale current-state claims；
 - current view 不能承担历史保存责任；
-- 历史位于 frozen Conversation Deltas 和 legacy history 中；
+- 历史位于不再被当前 conversation 使用的 Conversation Deltas 和 legacy history 中；
 - source、tests、Git 和 workspace 仍是 present implementation 的权威。
 
-这一维护原则没有因为 v0.2 改变。
+这一维护原则没有因为 v0.2.1 改变。
 
 ## 12. Legacy compatibility
 
@@ -245,7 +262,7 @@ Agent B -> B's active/frozen Conversation Delta
 
 ## 13. Prototype CLI
 
-原型提供最小的 conversation-oriented 操作：
+概念上的最小 conversation-oriented 操作是：
 
 ```text
 init
@@ -253,11 +270,13 @@ start
 update
 show
 current
-freeze
 recent
 older
 rebuild-context
 ```
+
+当前 prototype 还保留 `freeze` 命令，用于兼容已有 v0.2 文件布局和可选
+归档；它不是 v0.2.1 handoff 的必需操作。
 
 典型流程：
 
@@ -269,19 +288,44 @@ python prototype/deltalayer.py --root ./demo-project `
   update --conversation $delta._path `
   --change "完成一个持久语义变化"
 
-python prototype/deltalayer.py --root ./demo-project `
-  freeze --conversation $delta._path
 ```
 
 CLI 无法天然知道真实 ChatGPT/Codex conversation ID，因此通过显式 Delta path 模拟 conversation ownership。它不假装拥有产品层 session identity。
 
-`update` 会原子覆盖当前 active 文件；`freeze` 将其改为 `.frozen.json`；对 frozen 文件的 update 会失败。`start` 永远创建新文件，即使 changes 为空。`recent` 先读取 Conversation Deltas，再 fallback 到 legacy；`rebuild-context` 打包 `PROJECT.md`、recent semantic deltas、empty conversation metadata 和 legacy fallback。
+`update` 会原子覆盖当前 conversation 自己的文件；`start` 永远创建新文件，
+即使 changes 为空。当前 prototype 的 `freeze` 会将文件改为
+`.frozen.json`，但这是可选归档，不是协议要求。`recent` 先读取
+Conversation Deltas，再 fallback 到 legacy；`rebuild-context` 打包
+`PROJECT.md`、recent semantic deltas、empty conversation metadata 和
+legacy fallback。
 
 原型不调用模型，不自动从对话提取变化，不提供数据库、RAG、锁服务、reducer 或自动摘要服务。
 
 ## 14. 当前证据与版本定位
 
-DeltaLayer v0.2 是 Open Design Proposal + Experimental Prototype，不是成熟插件发布。
+DeltaLayer v0.2.1 是 Open Design Proposal + Experimental Prototype，不是成熟插件发布。
+
+当前现实仍由 source、tests、Git 和 workspace 提供：
+
+```text
+              Current Reality
+        Source / Tests / Git / Workspace
+                    |
+                    | validate against
+                    v
+            PROJECT.md
+          rebuildable current view
+                    ^
+                    |
+       +------------+------------+
+       |                         |
+ Conversation A              Conversation B
+       |                         |
+       v                         v
+    Delta A                    Delta B
+```
+
+Delta 是连续性输入和历史证据，不是当前实现的 source of truth。
 
 此前公开证据包括：
 
@@ -295,7 +339,7 @@ DeltaLayer v0.2 是 Open Design Proposal + Experimental Prototype，不是成熟
 
 ## 15. 不是什么
 
-DeltaLayer v0.2 不是：
+DeltaLayer v0.2.1 不是：
 
 - memory database；
 - RAG system；
@@ -311,13 +355,15 @@ DeltaLayer v0.2 不是：
 
 ## 16. 最终原则
 
-> **Persist one semantic delta per conversation.**
+> **A Conversation Delta is a semantic change record owned by one conversation.**
 
 每个 conversation 都留下一个 Delta 文件，哪怕它为空。
 
-> **Active Delta may change; frozen Delta never changes.**
+> **A conversation owns exactly one Delta during its lifetime.**
 
-当前对话可以修订自己的净变化，交接后文件冻结。
+当前对话可以修订自己的净变化；另一个 conversation 不得接管这个 Delta。
+
+> **Owned Delta may change; historical Delta is not another conversation's write target.**
 
 > **The current conversation may revise its own delta. Past conversations may not.**
 
@@ -329,4 +375,4 @@ DeltaLayer v0.2 不是：
 
 写入尽量精确，读取不要因为粗糙时间元数据丢掉语义历史。
 
-> **Persist change, not context. Let the next model reconstruct the rest.**
+> **Persist change ownership, not context. Let the next model reconstruct the rest.**

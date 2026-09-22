@@ -1,12 +1,12 @@
 # DeltaLayer
 
-**Persist change, not context. Let the next model reconstruct the rest.**
+**Persist change ownership, not context. Let the next model reconstruct the rest.**
 
 面向长期 AI Agent 工作的极简项目连续层。保存有持续意义的项目变化，让下一任 Agent 按需读取历史，并用当前源码和测试核实现实。
 
-**状态：Open Design Proposal + Experimental Prototype，当前设计版本为 v0.2 Conversation Delta model。** 不是成熟插件发布，也不是已经证明有效的通用 Agent Memory 方案。
+**状态：Open Design Proposal + Experimental Prototype，当前设计版本为 v0.2.1 Conversation Delta ownership model。** 不是成熟插件发布，也不是已经证明有效的通用 Agent Memory 方案。
 
-[Apache-2.0](LICENSE) · [首发文章](ARTICLE.md) · [v0.2 设计规范](DESIGN.md) · [实验与边界](EXPERIMENTS.md) · [相关工作](PRIOR_ART.md)
+[Apache-2.0](LICENSE) · [首发文章](ARTICLE.md) · [v0.2.1 设计规范](DESIGN.md) · [实验与边界](EXPERIMENTS.md) · [相关工作](PRIOR_ART.md)
 
 ## 两层历史
 
@@ -15,9 +15,9 @@ your-project/
 ├── AGENTS.md                  # Agent 的读写行为约定
 ├── PROJECT.md                 # 可重建的当前项目视图
 └── .deltalayer/
-    ├── changes/               # Conversation Delta 文件
+    ├── changes/               # owned / historical Conversation Delta 文件
     │   ├── <conversation>.json
-    │   └── <conversation>.frozen.json
+    │   └── <conversation>.frozen.json  # optional archival name
     └── changes.jsonl          # legacy v0 history，只读兼容
 ```
 
@@ -32,15 +32,22 @@ your-project/
 }
 ```
 
-它表达 conversation 开始到 handoff 的净持久语义差异。当前 conversation 可以更新自己的 active 文件；handoff 后文件冻结。即使没有持久变化，也必须保存 `changes: []` 的 Delta。
+它是一个由单个 conversation 所拥有的项目语义变化记录。当前 conversation
+可以更新、改写或删除自己 Delta 中的净变化；另一个 conversation 不得接管
+它。即使没有持久变化，也必须保存 `changes: []` 的 Delta。
 
-**Persist one semantic delta per conversation. The current conversation may revise its own delta. Past conversations may not.**
+**A conversation owns exactly one Delta during its lifetime.**
 
-新 conversation 永远 `start` 新文件；同一 conversation 跨任务记住并复用自己的 Delta path，不从目录中的旧 active 文件推断归属。旧未 frozen 文件仍可读，但不能接管；不需要全局 `.current` 或真实产品 conversation ID。`freeze` 在最终 conversation handoff 显式调用，不自动绑定每次任务回复。
+新 conversation 永远 `start` 新文件；Within the same conversation context,
+tasks continue using the same owned Delta path，不从目录中的旧文件推断归属。
+handoff 是给未来 Agent 的交接提示，
+不是 Delta 生命周期事件；不要求 `freeze`。当前 prototype 仍保留 `freeze`
+作为可选归档命令，旧 `.frozen.json` 仍可读。不需要全局 `.current` 或真实
+产品 conversation ID。
 
 启动时先读 `PROJECT.md`，再读最近 Conversation Deltas；不够就向前回溯，最后才进入 legacy `changes.jsonl`。读取深度由模型判断，具体实现由源码、测试和实际工作区确认。
 
-DeltaLayer v0.2 不要求 embedding、向量数据库、独立总结 Agent、确定性历史 reducer 或数据库。它也不替代 Git、测试、权限控制或运行时 checkpoint。此前 v0 dogfood 使用 shared append-only JSONL；Workbench 和 Qicetai evidence 保留其真实旧模型边界。
+DeltaLayer v0.2.1 不要求 embedding、向量数据库、独立总结 Agent、确定性历史 reducer 或数据库。它也不替代 Git、测试、权限控制或运行时 checkpoint。此前 v0 dogfood 使用 shared append-only JSONL；Workbench 和 Qicetai evidence 保留其真实旧模型边界。
 
 ## 已观察到什么
 
@@ -70,13 +77,12 @@ python prototype/deltalayer.py --root ./demo-project start --source human
 # 将 start 输出的 _path 传给后续命令
 python prototype/deltalayer.py --root ./demo-project update --conversation <delta-path> --change "确定以 Conversation Delta 作为连续性入口"
 python prototype/deltalayer.py --root ./demo-project current --conversation <delta-path>
-python prototype/deltalayer.py --root ./demo-project freeze --conversation <delta-path>
 python prototype/deltalayer.py --root ./demo-project recent --limit 3
 python -m unittest discover -s prototype -p "test_*.py"
 python tools/verify_release.py
 ```
 
-`recent` 返回继续回溯所需的 `next_before`；`older` 可以跨 Conversation Delta 文件回溯到 legacy JSONL。原型不会调用模型，也不会自动从对话提取变化；`rebuild-context` 只打包上下文，不自动重建 `PROJECT.md`。`init` 会创建 `.deltalayer/changes/`，并在目标项目的 `AGENTS.md` 追加 conversation 约定。请先在示例目录试用；并发写入与崩溃恢复尚无生产级保证。更多命令见 [原型说明](prototype/README.md)。
+`recent` 返回继续回溯所需的 `next_before`；`older` 可以跨 Conversation Delta 文件回溯到 legacy JSONL。当前 prototype 仍提供 `freeze` 作为可选归档操作，但它不是 v0.2.1 handoff 要求。原型不会调用模型，也不会自动从对话提取变化；`rebuild-context` 只打包上下文，不自动重建 `PROJECT.md`。`init` 会创建 `.deltalayer/changes/`，并在目标项目的 `AGENTS.md` 追加 conversation 约定。请先在示例目录试用；并发写入与崩溃恢复尚无生产级保证。更多命令见 [原型说明](prototype/README.md)。
 
 ## 我们想验证的问题
 
