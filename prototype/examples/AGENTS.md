@@ -32,6 +32,11 @@ must be concise and semantic; `changes: []` is valid and must still be
 persisted. Do not record transcripts, tool activity, ordinary debugging,
 temporary attempts, or full validation reports.
 
+Each change should, when possible, state both what durable semantic difference
+occurred and why a future conversation needs to know it for a project decision,
+verification, or boundary. Express that relevance in the change sentence
+itself; do not add reason, impact, type, before/after, or other metadata fields.
+
 Before handing control back, update the current Delta with the final net
 changes and update `PROJECT.md` when the high-level current view materially
 changed. Handoff is a recommendation to future agents, not a storage

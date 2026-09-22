@@ -175,6 +175,25 @@ A Conversation Delta should be much smaller than the conversation that produced 
 - What important belief or assumption changed?
 - What project decision or boundary changed?
 
+更好的 change 尽量在同一个简短句子中同时表达两件事：
+
+1. 什么持久语义变化发生了；
+2. 为什么未来 conversation 需要知道它，以便作出、核验或避免某个项目决策。
+
+这里的“为什么”不是额外的 `reason`、`impact` 或其他 metadata 字段，
+而是 change 本身对未来决策相关性的最小表达。它不要求记录完整因果链、
+工作过程或解释性叙述。
+
+例如：
+
+```text
+reader 接受 date-only timestamp，同时保留单一 JSONL 的 append order，
+因此未来 Agent 可以读取旧语义历史而不伪造时刻或重排事件。
+```
+
+只写“修复了 reader”过于像任务记录；完整复述调试过程又超出了 change
+的边界。目标是留下未来 Agent 在继续工作时真正需要保留的最小语义差异。
+
 不要记录：
 
 - files read；
@@ -194,7 +213,9 @@ A Conversation Delta should be much smaller than the conversation that produced 
 
 > **If a future agent could omit this sentence without materially changing its understanding or next decision, do not record it.**
 
-`changes` 保存 semantic difference，不是 evidence package。测试报告、原始 session 和 provenance 应保存在适当的实验材料中，而不是塞进每个 Delta。
+`changes` 保存 semantic difference 及其对未来项目决策的最小相关性，
+不是 evidence package。测试报告、原始 session 和 provenance 应保存在
+适当的实验材料中，而不是塞进每个 Delta。
 
 ## 8. 新 conversation 的读取逻辑
 

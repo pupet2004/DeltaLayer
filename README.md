@@ -45,6 +45,10 @@ handoff 是给未来 Agent 的交接提示，
 作为可选归档命令，旧 `.frozen.json` 仍可读。不需要全局 `.current` 或真实
 产品 conversation ID。
 
+一个好的 change 不只说“发生了什么”，还尽量说明为什么未来 conversation
+需要知道它来作出、核验或避免某个项目决策。这是 change 文本的一部分，不是
+额外的 `reason`、`impact` 或其他结构化字段；它仍然只是最小语义差异。
+
 启动时先读 `PROJECT.md`，再读最近 Conversation Deltas；不够就向前回溯，最后才进入 legacy `changes.jsonl`。读取深度由模型判断，具体实现由源码、测试和实际工作区确认。
 
 DeltaLayer v0.2.1 不要求 embedding、向量数据库、独立总结 Agent、确定性历史 reducer 或数据库。它也不替代 Git、测试、权限控制或运行时 checkpoint。此前 v0 dogfood 使用 shared append-only JSONL；Workbench 和 Qicetai evidence 保留其真实旧模型边界。
