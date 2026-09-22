@@ -12,14 +12,8 @@ from urllib.parse import unquote
 ROOT = Path(__file__).resolve().parents[1]
 EXPERIMENTS = ROOT / "experiments"
 BANNED = (
-    "qicetai",
-    "db-gpt",
-    "agentscope",
-    "deepseek",
-    "brave",
-    "tavily",
-    "cdb6799",
-    "8a7a10",
+    # Public case names, model names, provider names and commit references
+    # are intentionally allowed; these markers identify private provenance.
     "source_session",
     "source_path",
     "C:\\Users\\",
